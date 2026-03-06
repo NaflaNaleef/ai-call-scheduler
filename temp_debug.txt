@@ -1,0 +1,40 @@
+  const handleBulkGroupAction = async () => {
+    if (!selectedPickerGroupId || selectedIds.size === 0 || !bulkActionType) return;
+    setBulkGroupLoading(true);
+    try {
+      const contactIds = Array.from(selectedIds);
+      const isRemove = bulkActionType === "remove";
+
+      const promises = contactIds.map(async (contactId) => {
+        if (isRemove) {
+          const { data, error } = (await supabase
+            .rpc("f_remove_contact_from_group", {
+              p_group_id: selectedPickerGroupId,
+              p_contact_id: contactId
+            })
+            .single()) as any;
+
+          if (error) throw error;
+          // Note: The user said f_remove_contact_from_group returns JSON not a table
+          if (data && data.success === false) {
+            console.warn(`f_remove_contact_from_group partial failure: ${data.message}`);
+          }
+          return data;
+        } else {
+          const { error } = await supabase.rpc("f_add_contact_to_group", {
+            p_group_id: selectedPickerGroupId,
+            p_contact_id: contactId
+          });
+          if (error) throw error;
+        }
+      });
+
+      await Promise.all(promises);
+      setGroupPickerOpen(false);
+      setSelectedIds(new Set());
+      setSelectedPickerGroupId("");
+      await fetchContacts();
+    } catch (err: any) {
+      console.error(`Bulk ${bulkActionType} failed:`, err.message);
+    } finally {
+      setBulkGroupLoading(false);
