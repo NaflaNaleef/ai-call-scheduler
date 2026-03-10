@@ -831,7 +831,7 @@ function CampaignDetailDrawer({
   const isDraft = status === "DRAFT";
   const hasContacts = listCampaign.totalRecipients > 0;
   const hasFields = fields.length > 0;
-  const canLaunch = isDraft && hasContacts && hasFields && !activeRun && !launchSuccess;
+  const canLaunch = isDraft && hasContacts && !activeRun && !launchSuccess;
 
   const groupsLinkedCount = loading ? "..." : (fullCampaign?.contact_group_ids?.length ?? 0);
   const directContactsCount = loading ? "..." : (fullCampaign?.target_contact_ids?.length ?? 0);
@@ -969,15 +969,7 @@ function CampaignDetailDrawer({
                     </div>
                   )}
 
-                  {/* Guard: no fields */}
-                  {hasContacts && !hasFields && (
-                    <div className="flex items-start gap-2 p-3 rounded-lg border border-yellow-200 bg-yellow-50 dark:bg-yellow-950/20 dark:border-yellow-800">
-                      <AlertCircle className="h-4 w-4 text-yellow-600 dark:text-yellow-400 shrink-0 mt-0.5" />
-                      <p className="text-xs text-yellow-700 dark:text-yellow-400">
-                        Add at least one field via the Edit button before launching.
-                      </p>
-                    </div>
-                  )}
+
 
                   {/* Launch error */}
                   {launchError && (
@@ -994,7 +986,8 @@ function CampaignDetailDrawer({
                         <p className="text-sm font-semibold text-primary">Ready to launch</p>
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        {listCampaign.totalRecipients} contacts · {fields.length} field{fields.length !== 1 ? "s" : ""}
+                        {listCampaign.totalRecipients} contacts
+                        {fields.length > 0 && ` · ${fields.length} field${fields.length !== 1 ? "s" : ""}`}
                       </p>
                     </div>
                   )}
@@ -1371,6 +1364,11 @@ const EditCampaignModal = memo(({ open, onClose, onUpdate, campaign }: EditCampa
           await supabase.rpc("f_add_contact_group_to_campaign", { p_campaign_id: campaign.id, p_contact_group_id: gid });
           await supabase.rpc("f_add_group_contacts_to_campaign", { p_campaign_id: campaign.id, p_group_id: gid });
         }
+
+        console.log("contactsToRemove:", contactsToRemove);
+        console.log("initialContactIds:", Array.from(initialContactIds));
+        console.log("allSelectedContactIds:", Array.from(allSelectedContactIds));
+
         for (const gid of groupsToRemove) await supabase.rpc("f_remove_contact_group_from_campaign", { p_campaign_id: campaign.id, p_contact_group_id: gid });
         if (contactsToAdd.length > 0) await supabase.rpc("f_add_contacts_to_campaign", { p_campaign_id: campaign.id, p_contact_ids: contactsToAdd });
         for (const cid of contactsToRemove) await supabase.rpc("f_remove_contact_from_campaign", { p_campaign_id: campaign.id, p_contact_id: cid });
