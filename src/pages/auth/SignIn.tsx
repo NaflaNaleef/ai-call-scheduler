@@ -40,7 +40,7 @@ export default function SignInPage() {
         setError("Invalid email or password. Please try again.");
         return;
       }
-      await login(email, password);
+      await login(email, password, rememberMe);
       navigate(from, { replace: true });
     } finally {
       setLoading(false);

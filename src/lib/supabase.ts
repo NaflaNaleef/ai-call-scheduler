@@ -9,4 +9,18 @@ if (!supabaseUrl || !supabaseAnonKey) {
     );
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const REMEMBER_KEY = "app_remember_session";
+const AUTH_TOKEN_KEY = Object.keys(localStorage).find(k => k.includes("sb-") && k.includes("-auth-token"));
+if (localStorage.getItem(REMEMBER_KEY) === "true" && AUTH_TOKEN_KEY) {
+  const stored = localStorage.getItem(AUTH_TOKEN_KEY);
+  if (stored) sessionStorage.setItem(AUTH_TOKEN_KEY, stored);
+}
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    storage: window.sessionStorage,
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+  },
+});
