@@ -21,9 +21,10 @@ import {
   SheetDescription,
 } from "@/components/ui/sheet";
 import { Separator } from "@/components/ui/separator";
-import { Play, Search, Phone, CheckCircle, XCircle, Clock, Timer, Loader2 } from "lucide-react";
+import { Play, Search, Phone, CheckCircle, XCircle, Clock, Timer, Loader2, ChevronDown, ChevronRight, Layers } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/AuthContext";
+import { cn } from "@/lib/utils";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -125,6 +126,21 @@ export default function CampaignRunsPage() {
   const [drawerSearch, setDrawerSearch] = useState("");
   const [drawerStatusFilter, setDrawerStatusFilter] = useState("all");
   const [drawerPage, setDrawerPage] = useState(1);
+
+  // Grouping
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+
+  // Initialize expandedGroups for recurring campaigns
+  useEffect(() => {
+    if (runs.length > 0) {
+      const recurringCampaignIds = new Set(
+        runs
+          .filter(r => r.scheduleType === 'recurring')
+          .map(r => r.campaignId)
+      );
+      setExpandedGroups(recurringCampaignIds);
+    }
+  }, [runs.length]);
 
   // ── Fetch runs ────────────────────────────────────────────────────────────
   const fetchRuns = useCallback(async () => {
@@ -246,8 +262,93 @@ export default function CampaignRunsPage() {
     return matchSearch && matchStatus;
   });
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  // Grouping and Sorting logic
+  const groupedItems = (() => {
+    const groups: Record<string, CampaignRun[]> = {};
+    const flatRuns: CampaignRun[] = [];
+
+    filtered.forEach(run => {
+      if (run.scheduleType === 'recurring') {
+        if (!groups[run.campaignId]) groups[run.campaignId] = [];
+        groups[run.campaignId].push(run);
+      } else {
+        flatRuns.push(run);
+      }
+    });
+
+    const topLevel: any[] = [
+      ...flatRuns.map(r => ({
+        type: 'flat',
+        data: r,
+        date: r.startedAt || r.scheduledAt || '0'
+      })),
+      ...Object.entries(groups).map(([id, runs]) => {
+        const sortedRuns = [...runs].sort((a, b) => {
+          const dateA = new Date(a.startedAt || a.scheduledAt || 0).getTime();
+          const dateB = new Date(b.startedAt || b.scheduledAt || 0).getTime();
+          return dateB - dateA;
+        });
+
+        // Derive overall status: if any run is RUNNING, group is RUNNING.
+        // Else check if latest is SCHEDULED.
+        let groupStatus = sortedRuns[0].status;
+        if (sortedRuns.some(r => r.status === 'RUNNING')) {
+          groupStatus = 'RUNNING';
+        } else if (sortedRuns[0].status === 'SCHEDULED') {
+          groupStatus = 'SCHEDULED';
+        }
+
+        return {
+          type: 'group',
+          campaignId: id,
+          campaignName: sortedRuns[0].campaignName,
+          status: groupStatus,
+          runs: sortedRuns,
+          count: sortedRuns.length,
+          date: sortedRuns[0].startedAt || sortedRuns[0].scheduledAt || '0',
+        };
+      })
+    ];
+
+    return topLevel.sort((a, b) => {
+      const dateA = new Date(a.date).getTime();
+      const dateB = new Date(b.date).getTime();
+      return dateB - dateA;
+    });
+  })();
+
+  const totalGroupedPages = Math.max(1, Math.ceil(groupedItems.length / PAGE_SIZE));
+  const paginatedGroups = groupedItems.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  // Flatten for display
+  const displayRows: any[] = [];
+  paginatedGroups.forEach(item => {
+    if (item.type === 'flat') {
+      displayRows.push({ ...item, key: item.data.id });
+    } else {
+      displayRows.push({ ...item, key: `group-${item.campaignId}` });
+      if (expandedGroups.has(item.campaignId)) {
+        item.runs.forEach((run: any, index: number) => {
+          displayRows.push({
+            type: 'child',
+            data: run,
+            key: run.id,
+            runNumber: item.count - index, // #1 is oldest, assuming item.runs is newest-to-oldest
+            campaignId: item.campaignId
+          });
+        });
+      }
+    }
+  });
+
+  const toggleGroup = (campaignId: string) => {
+    setExpandedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(campaignId)) next.delete(campaignId);
+      else next.add(campaignId);
+      return next;
+    });
+  };
 
   // ── Drawer filtering ──────────────────────────────────────────────────────
   const filteredLogs = callLogs.filter((l) => {
@@ -269,66 +370,6 @@ export default function CampaignRunsPage() {
     setDrawerOpen(true);
   }
 
-  // ── Columns ───────────────────────────────────────────────────────────────
-  const columns = [
-    {
-      key: "id",
-      header: "Run ID",
-      render: (item: CampaignRun) => (
-        <span className="font-mono text-xs text-muted-foreground">{item.id.slice(0, 8)}...</span>
-      ),
-    },
-    { key: "campaignName", header: "Campaign Name" },
-    {
-      key: "status",
-      header: "Status",
-      render: (item: CampaignRun) => (
-        <StatusBadge variant={mapRunStatus(item.status)}>{item.status.toLowerCase()}</StatusBadge>
-      ),
-    },
-    {
-      key: "startedAt",
-      header: "Started At",
-      render: (item: CampaignRun) => <span>{formatDateTime(item.startedAt)}</span>,
-    },
-    {
-      key: "completedAt",
-      header: "Completed At",
-      render: (item: CampaignRun) => <span>{formatDateTime(item.completedAt)}</span>,
-    },
-    {
-      key: "totalContacts",
-      header: "Total",
-      render: (item: CampaignRun) => (
-        <span className="tabular-nums font-medium">{item.totalContacts}</span>
-      ),
-    },
-    {
-      key: "callsCompleted",
-      header: "Success",
-      render: (item: CampaignRun) => (
-        <span className="tabular-nums text-accent font-medium">{item.callsCompleted}</span>
-      ),
-    },
-    {
-      key: "callsFailed",
-      header: "Failed",
-      render: (item: CampaignRun) => (
-        <span className="tabular-nums text-destructive font-medium">{item.callsFailed}</span>
-      ),
-    },
-    {
-      key: "actions",
-      header: "",
-      render: (item: CampaignRun) => (
-        <div onClick={(e) => e.stopPropagation()}>
-          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => openDrawer(item)}>
-            View Details
-          </Button>
-        </div>
-      ),
-    },
-  ];
 
   const execColumns = [
     {
@@ -411,7 +452,7 @@ export default function CampaignRunsPage() {
           </div>
         ) : error ? (
           <div className="text-sm text-destructive text-center py-8">{error}</div>
-        ) : filtered.length === 0 ? (
+        ) : displayRows.length === 0 ? (
           <EmptyState
             icon={<Play className="h-6 w-6" />}
             title="No runs found"
@@ -423,13 +464,109 @@ export default function CampaignRunsPage() {
           />
         ) : (
           <>
-            <DataTable
-              columns={columns}
-              data={paginated}
-              keyExtractor={(r) => r.id}
-              onRowClick={openDrawer}
-            />
-            <PaginationBar page={page} totalPages={totalPages} onPageChange={setPage} />
+            <div className="overflow-x-auto rounded-lg border border-border bg-card">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border bg-muted/50">
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Run ID</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Campaign Name</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Status</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Started At</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Completed At</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Total</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Success</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Failed</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider"></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {displayRows.map((row) => {
+                    if (row.type === 'flat' || row.type === 'child') {
+                      const item = row.data;
+                      const isChild = row.type === 'child';
+                      return (
+                        <tr
+                          key={row.key}
+                          onClick={() => openDrawer(item)}
+                          className={cn(
+                            "group transition-colors duration-150 cursor-pointer hover:bg-muted/50",
+                            isChild && "bg-muted/10 border-l-2 border-primary/20"
+                          )}
+                        >
+                          <td className={cn("px-4 py-3 font-mono text-xs text-muted-foreground", isChild && "pl-8")}>
+                            {isChild ? `#${row.runNumber}` : `${item.id.slice(0, 8)}...`}
+                          </td>
+                          <td className="px-4 py-3 font-medium">
+                            {isChild ? (
+                              <span className="text-muted-foreground flex items-center gap-1.5 grayscale opacity-70">
+                                <Layers className="h-3 w-3" /> {item.campaignName}
+                              </span>
+                            ) : (
+                              item.campaignName
+                            )}
+                          </td>
+                          <td className="px-4 py-3">
+                            <StatusBadge variant={mapRunStatus(item.status)}>{item.status.toLowerCase()}</StatusBadge>
+                          </td>
+                          <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{formatDateTime(item.startedAt)}</td>
+                          <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{formatDateTime(item.completedAt)}</td>
+                          <td className="px-4 py-3 tabular-nums font-medium">{item.totalContacts}</td>
+                          <td className="px-4 py-3 tabular-nums text-accent font-medium">{item.callsCompleted}</td>
+                          <td className="px-4 py-3 tabular-nums text-destructive font-medium">{item.callsFailed}</td>
+                          <td className="px-4 py-3 text-right">
+                            <Button variant="outline" size="sm" className="h-7 text-xs px-2 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => { e.stopPropagation(); openDrawer(item); }}>
+                              View
+                            </Button>
+                          </td>
+                        </tr>
+                      );
+                    } else if (row.type === 'group') {
+                      const expanded = expandedGroups.has(row.campaignId);
+                      const lastCompleted = row.runs.find((r: any) => r.status === 'COMPLETED');
+                      const nextScheduled = row.runs.find((r: any) => r.status === 'SCHEDULED' && r.scheduledAt);
+                      const activityLabel = lastCompleted
+                        ? `Last run: ${formatDateTime(lastCompleted.startedAt)}`
+                        : nextScheduled
+                          ? `Next run: ${formatDateTime(nextScheduled.scheduledAt)}`
+                          : 'Pending';
+
+                      return (
+                        <tr
+                          key={row.key}
+                          onClick={() => toggleGroup(row.campaignId)}
+                          className="bg-muted/30 hover:bg-muted/50 transition-colors cursor-pointer"
+                        >
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2">
+                              {expanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Multiple</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 font-bold flex items-center gap-2">
+                            {row.campaignName}
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-bold uppercase tracking-tighter">
+                              <Clock className="h-2.5 w-2.5" /> Recurring
+                            </span>
+                            <span className="text-[11px] font-medium text-muted-foreground ml-1">({row.count} runs)</span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <StatusBadge variant={mapRunStatus(row.status)}>{row.status.toLowerCase()}</StatusBadge>
+                          </td>
+                          <td colSpan={5} className="px-4 py-3 text-xs text-muted-foreground italic">
+                            {activityLabel}
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <div className="text-[10px] font-bold uppercase text-primary/60 tracking-widest">{expanded ? 'Collapse' : 'Expand'}</div>
+                          </td>
+                        </tr>
+                      );
+                    }
+                    return null;
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <PaginationBar page={page} totalPages={totalGroupedPages} onPageChange={setPage} />
           </>
         )}
       </div>
@@ -497,7 +634,7 @@ export default function CampaignRunsPage() {
                       <p className="font-bold text-lg text-primary">Campaign Scheduled</p>
                       <p className="text-sm text-muted-foreground">
                         {activeRun.scheduledAt
-                          ? `Calls will start on ${new Date(activeRun.scheduledAt).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })} at ${new Date(activeRun.scheduledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                          ? `Calls will start on ${new Date(activeRun.scheduledAt).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })} at ${new Date(activeRun.scheduledAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}`
                           : `Will run on next active day between ${activeRun.callStartTime || '09:00'}–${activeRun.callEndTime || '18:00'}`
                         }
                       </p>

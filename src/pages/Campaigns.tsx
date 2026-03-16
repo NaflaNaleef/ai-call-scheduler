@@ -254,6 +254,8 @@ function CreateCampaignModal({ open, onClose, onCreate, preselectedGroup }: Crea
   const [callStartTime, setCallStartTime] = useState("09:00");
   const [callEndTime, setCallEndTime] = useState("18:00");
   const [daysOfWeek, setDaysOfWeek] = useState<string[]>(['MON', 'TUE', 'WED', 'THU', 'FRI']);
+  const [startDate, setStartDate] = useState<string | null>(null);
+  const [endDate, setEndDate] = useState<string | null>(null);
 
   // Field step state
   const [localFields, setLocalFields] = useState<any[]>([]);
@@ -277,6 +279,7 @@ function CreateCampaignModal({ open, onClose, onCreate, preselectedGroup }: Crea
       setScheduleType("immediate"); setScheduledStartAt(null);
       setCallStartTime("09:00"); setCallEndTime("18:00");
       setDaysOfWeek(['MON', 'TUE', 'WED', 'THU', 'FRI']);
+      setStartDate(null); setEndDate(null);
       createRef.current = false;
     }
   }, [open, preselectedGroup]);
@@ -388,10 +391,11 @@ function CreateCampaignModal({ open, onClose, onCreate, preselectedGroup }: Crea
     if (!user?.org_id || !user?.dbId || createRef.current) return;
     createRef.current = true; setCreateLoading(true);
     try {
+      const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
       const { data: rawData, error } = await supabase.rpc("f_create_campaign", {
         p_org_id: user.org_id, p_created_by: user.dbId, p_name: name,
         p_description: "", p_campaign_type: "collect", p_greeting: greeting,
-        p_instructions: instructions, p_timezone: "America/New_York", p_status: "DRAFT",
+        p_instructions: instructions, p_timezone: userTimezone, p_status: "DRAFT",
         p_schedule_type: scheduleType,
         p_scheduled_start_at: scheduleType === 'run_once' && scheduledStartAt
           ? new Date(scheduledStartAt).toISOString()
@@ -399,6 +403,8 @@ function CreateCampaignModal({ open, onClose, onCreate, preselectedGroup }: Crea
         p_call_start_time: scheduleType === 'recurring' ? callStartTime : null,
         p_call_end_time: scheduleType === 'recurring' ? callEndTime : null,
         p_days_of_week: scheduleType === 'recurring' ? daysOfWeek : null,
+        p_start_date: scheduleType === 'recurring' ? startDate : null,
+        p_end_date: scheduleType === 'recurring' ? endDate : null,
       });
       if (error) throw error;
       const campaignId = Array.isArray(rawData) ? (rawData[0]?.id ?? rawData[0]) : (rawData?.id ?? rawData);
@@ -425,7 +431,10 @@ function CreateCampaignModal({ open, onClose, onCreate, preselectedGroup }: Crea
   const stepTitles = ["Campaign Setup", "Targeting", "Schedule", "Review"];
   const canNext1 = name.trim().length > 0 && greeting.trim().length > 0 && instructions.trim().length > 0;
   const canNext2 = allSelectedContactIds.size > 0;
-  const canNext3 = scheduleType !== 'run_once' || !!scheduledStartAt;
+  const canNext3 =
+    scheduleType === 'run_once' ? !!scheduledStartAt :
+      scheduleType === 'recurring' ? !!endDate :
+        true;
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -613,6 +622,19 @@ function CreateCampaignModal({ open, onClose, onCreate, preselectedGroup }: Crea
 
             {scheduleType === 'recurring' && (
               <div className="p-3 rounded-lg border bg-muted/30 space-y-3 animate-in fade-in slide-in-from-top-2">
+                <div className="space-y-2">
+                  <Label className="text-xs">Campaign Period</Label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-[10px] text-muted-foreground">Start Date</Label>
+                      <Input type="date" className="h-8 text-xs" value={startDate || ""} onChange={(e) => setStartDate(e.target.value)} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-[10px] text-muted-foreground">End Date <span className="text-destructive">*</span></Label>
+                      <Input type="date" className="h-8 text-xs" value={endDate || ""} onChange={(e) => setEndDate(e.target.value)} />
+                    </div>
+                  </div>
+                </div>
                 <div className="space-y-2">
                   <Label className="text-xs">Active Days</Label>
                   <div className="flex flex-wrap gap-1.5">
@@ -831,7 +853,7 @@ function CampaignDetailDrawer({
   const isDraft = status === "DRAFT";
   const hasContacts = listCampaign.totalRecipients > 0;
   const hasFields = fields.length > 0;
-  const canLaunch = isDraft && hasContacts && hasFields && !activeRun && !launchSuccess;
+  const canLaunch = isDraft && hasContacts && !activeRun && !launchSuccess;
 
   const groupsLinkedCount = loading ? "..." : (fullCampaign?.contact_group_ids?.length ?? 0);
   const directContactsCount = loading ? "..." : (fullCampaign?.target_contact_ids?.length ?? 0);
@@ -877,6 +899,65 @@ function CampaignDetailDrawer({
               <div className="rounded-lg border border-border bg-muted/40 p-3">
                 <p className="text-xs text-muted-foreground mb-1">Direct Contacts</p>
                 <p className="text-sm font-semibold tabular-nums">{directContactsCount}</p>
+              </div>
+            </div>
+
+            {/* Schedule Section */}
+            <div className="rounded-lg border border-border bg-muted/40 p-3 mb-4">
+              <p className="text-xs text-muted-foreground mb-1.5 flex items-center gap-1.5">
+                <Clock className="h-3 w-3" /> Schedule
+              </p>
+              <div className="text-sm">
+                {!fullCampaign && loading ? (
+                  <p className="text-xs text-muted-foreground animate-pulse">Loading schedule...</p>
+                ) : (
+                  <>
+                    {fullCampaign?.schedule_type === 'immediate' && (
+                      <p className="font-medium">Runs immediately on launch</p>
+                    )}
+                    {fullCampaign?.schedule_type === 'run_once' && (
+                      <p className="font-medium">
+                        Scheduled for {fullCampaign.scheduled_start_at ? new Date(fullCampaign.scheduled_start_at).toLocaleString() : "Not set"}
+                      </p>
+                    )}
+                    {fullCampaign?.schedule_type === 'recurring' && (
+                      <div className="space-y-2">
+                        <div className="flex flex-wrap gap-1">
+                          {['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].map(day => {
+                            const isActive = fullCampaign.days_of_week?.includes(day);
+                            return (
+                              <span
+                                key={day}
+                                className={cn(
+                                  "text-[9px] font-bold px-1.5 py-0.5 rounded border",
+                                  isActive
+                                    ? "bg-primary/10 text-primary border-primary/20"
+                                    : "bg-background text-muted-foreground border-border opacity-50"
+                                )}
+                              >
+                                {day}
+                              </span>
+                            );
+                          })}
+                        </div>
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                          <div>
+                            <span className="text-muted-foreground">Window: </span>
+                            <span className="font-semibold tabular-nums">
+                              {fullCampaign.call_start_time} – {fullCampaign.call_end_time}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Period: </span>
+                            <span className="font-semibold tabular-nums whitespace-nowrap">
+                              {fullCampaign.start_date ? new Date(fullCampaign.start_date).toLocaleDateString() : 'Start'} – {fullCampaign.end_date ? new Date(fullCampaign.end_date).toLocaleDateString() : 'End'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
             </div>
 
@@ -969,15 +1050,7 @@ function CampaignDetailDrawer({
                     </div>
                   )}
 
-                  {/* Guard: no fields */}
-                  {hasContacts && !hasFields && (
-                    <div className="flex items-start gap-2 p-3 rounded-lg border border-yellow-200 bg-yellow-50 dark:bg-yellow-950/20 dark:border-yellow-800">
-                      <AlertCircle className="h-4 w-4 text-yellow-600 dark:text-yellow-400 shrink-0 mt-0.5" />
-                      <p className="text-xs text-yellow-700 dark:text-yellow-400">
-                        Add at least one field via the Edit button before launching.
-                      </p>
-                    </div>
-                  )}
+
 
                   {/* Launch error */}
                   {launchError && (
@@ -994,7 +1067,8 @@ function CampaignDetailDrawer({
                         <p className="text-sm font-semibold text-primary">Ready to launch</p>
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        {listCampaign.totalRecipients} contacts · {fields.length} field{fields.length !== 1 ? "s" : ""}
+                        {listCampaign.totalRecipients} contacts
+                        {fields.length > 0 && ` · ${fields.length} field${fields.length !== 1 ? "s" : ""}`}
                       </p>
                     </div>
                   )}
@@ -1134,6 +1208,8 @@ const EditCampaignModal = memo(({ open, onClose, onUpdate, campaign }: EditCampa
   const [callStartTime, setCallStartTime] = useState("09:00");
   const [callEndTime, setCallEndTime] = useState("18:00");
   const [daysOfWeek, setDaysOfWeek] = useState<string[]>(['MON', 'TUE', 'WED', 'THU', 'FRI']);
+  const [startDate, setStartDate] = useState<string | null>(null);
+  const [endDate, setEndDate] = useState<string | null>(null);
 
   // Fields state
   const [fields, setFields] = useState<CampaignField[]>([]);
@@ -1211,6 +1287,8 @@ const EditCampaignModal = memo(({ open, onClose, onUpdate, campaign }: EditCampa
       setCallStartTime(r.call_start_time || "09:00");
       setCallEndTime(r.call_end_time || "18:00");
       setDaysOfWeek(r.days_of_week || ['MON', 'TUE', 'WED', 'THU', 'FRI']);
+      setStartDate(r.start_date || null);
+      setEndDate(r.end_date || null);
 
       setSelectedGroupIds(new Set(gids));
       setInitialGroupIds(new Set(gids));
@@ -1356,6 +1434,8 @@ const EditCampaignModal = memo(({ open, onClose, onUpdate, campaign }: EditCampa
         p_call_start_time: scheduleType === 'recurring' ? callStartTime : null,
         p_call_end_time: scheduleType === 'recurring' ? callEndTime : null,
         p_days_of_week: scheduleType === 'recurring' ? daysOfWeek : null,
+        p_start_date: scheduleType === 'recurring' ? startDate : null,
+        p_end_date: scheduleType === 'recurring' ? endDate : null,
       });
       if (updateError) throw updateError;
 
@@ -1371,6 +1451,11 @@ const EditCampaignModal = memo(({ open, onClose, onUpdate, campaign }: EditCampa
           await supabase.rpc("f_add_contact_group_to_campaign", { p_campaign_id: campaign.id, p_contact_group_id: gid });
           await supabase.rpc("f_add_group_contacts_to_campaign", { p_campaign_id: campaign.id, p_group_id: gid });
         }
+
+        console.log("contactsToRemove:", contactsToRemove);
+        console.log("initialContactIds:", Array.from(initialContactIds));
+        console.log("allSelectedContactIds:", Array.from(allSelectedContactIds));
+
         for (const gid of groupsToRemove) await supabase.rpc("f_remove_contact_group_from_campaign", { p_campaign_id: campaign.id, p_contact_group_id: gid });
         if (contactsToAdd.length > 0) await supabase.rpc("f_add_contacts_to_campaign", { p_campaign_id: campaign.id, p_contact_ids: contactsToAdd });
         for (const cid of contactsToRemove) await supabase.rpc("f_remove_contact_from_campaign", { p_campaign_id: campaign.id, p_contact_id: cid });
@@ -1558,6 +1643,19 @@ const EditCampaignModal = memo(({ open, onClose, onUpdate, campaign }: EditCampa
               {scheduleType === 'recurring' && (
                 <div className="p-3 rounded-lg border bg-muted/30 space-y-3 animate-in fade-in slide-in-from-top-2">
                   <div className="space-y-2">
+                    <Label className="text-xs">Campaign Period</Label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label className="text-[10px] text-muted-foreground">Start Date</Label>
+                        <Input type="date" className="h-8 text-xs" value={startDate || ""} onChange={(e) => setStartDate(e.target.value)} disabled={isLocked} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-[10px] text-muted-foreground">End Date <span className="text-destructive">*</span></Label>
+                        <Input type="date" className="h-8 text-xs" value={endDate || ""} onChange={(e) => setEndDate(e.target.value)} disabled={isLocked} />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
                     <Label className="text-xs">Active Days</Label>
                     <div className="flex flex-wrap gap-1.5">
                       {['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].map((day) => (
@@ -1598,7 +1696,7 @@ const EditCampaignModal = memo(({ open, onClose, onUpdate, campaign }: EditCampa
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={loading}>Cancel</Button>
-          {!isLocked && <Button onClick={handleUpdate} disabled={loading || !name.trim()}>{loading ? "Saving..." : "Save Changes"}</Button>}
+          {!isLocked && <Button onClick={handleUpdate} disabled={loading || !name.trim() || (scheduleType === 'recurring' && !endDate)}>{loading ? "Saving..." : "Save Changes"}</Button>}
         </DialogFooter>
       </DialogContent>
     </Dialog>
