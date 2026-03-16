@@ -39,7 +39,6 @@ const navItems: NavItem[] = [
   { label: "Campaign Runs", icon: Play, path: "/campaign-runs" },
   { label: "Call Logs", icon: PhoneCall, path: "/call-logs" },
   { label: "Profile", icon: UserCircle, path: "/profile" },
-  { label: "Settings", icon: Settings, path: "/settings" },
   { label: "Subscriptions", icon: CreditCard, path: "/subscriptions" },
 ];
 

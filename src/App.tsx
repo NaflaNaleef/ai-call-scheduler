@@ -14,7 +14,6 @@ import CampaignsPage from "./pages/Campaigns";
 import CampaignRunsPage from "./pages/CampaignRuns";
 import CallLogsPage from "./pages/CallLogs";
 import ProfilePage from "./pages/Profile";
-import SettingsPage from "./pages/Settings";
 import SubscriptionsPage from "./pages/Subscriptions";
 import GroupsPage from "./pages/Groups";
 
@@ -92,14 +91,6 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <ProfilePage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/settings"
-              element={
-                <ProtectedRoute>
-                  <SettingsPage />
                 </ProtectedRoute>
               }
             />
