@@ -22,7 +22,7 @@ import {
   FileEdit, X, Target, Rocket, AlertCircle, Database, ListPlus, ExternalLink,
   Lock,
 } from "lucide-react";
-import { useState, useEffect, useRef, useCallback, memo } from "react";
+import { useState, useEffect, useRef, useCallback, memo, Fragment } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabase";
@@ -100,24 +100,51 @@ interface TargetingPanelProps {
   groupMembers: Record<string, Set<string>>;
   onToggleGroup: (id: string, checked: boolean) => void;
   onToggleContact: (id: string, checked: boolean) => void;
+  onSelectAll: () => void;
+  onClearAll: () => void;
   loading?: boolean;
 }
 
 const TargetingPanel = memo(({
   groups, contacts, selectedGroupIds, manualContactIds,
-  excludedContactIds, groupMembers, onToggleGroup, onToggleContact, loading,
+  excludedContactIds, groupMembers, onToggleGroup, onToggleContact, 
+  onSelectAll, onClearAll, loading,
 }: TargetingPanelProps) => {
   const [search, setSearch] = useState("");
+  const [showSelectedOnly, setShowSelectedOnly] = useState(false);
+
+  const isContactSelected = (c: any) => {
+    const cid = String(c.id ?? c.contact_id);
+    const inGroupSelection = Object.entries(groupMembers).some(([gid, members]) =>
+      selectedGroupIds.has(gid) && members.has(cid)
+    );
+    const isManual = manualContactIds.has(cid);
+    const isExcluded = excludedContactIds.has(cid);
+    return (inGroupSelection || isManual) && !isExcluded;
+  };
 
   const filteredContacts = contacts.filter(c => {
+    if (showSelectedOnly && !isContactSelected(c)) return false;
     const name = [c.first_name, c.last_name].filter(Boolean).join(" ").toLowerCase();
     const email = (c.email || "").toLowerCase();
     const s = search.toLowerCase();
     return name.includes(s) || email.includes(s);
+  }).sort((a, b) => {
+    const aSel = isContactSelected(a);
+    const bSel = isContactSelected(b);
+    if (aSel === bSel) return 0;
+    return aSel ? -1 : 1;
+  });
+
+  const sortedGroups = [...groups].sort((a, b) => {
+    const aSel = selectedGroupIds.has(String(a.id));
+    const bSel = selectedGroupIds.has(String(b.id));
+    if (aSel === bSel) return 0;
+    return aSel ? -1 : 1;
   });
 
   return (
-    <div className="grid grid-cols-[1fr_2.5fr] gap-3" style={{ height: '380px' }}>
+    <div className="grid grid-cols-[1.2fr_2.5fr] gap-4 flex-1 min-h-0">
       <div className="flex flex-col border rounded-lg bg-muted/30 overflow-hidden">
         <div className="p-2.5 border-b bg-muted/50 rounded-t-lg">
           <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
@@ -128,28 +155,70 @@ const TargetingPanel = memo(({
           {loading ? (
             <div className="py-4 text-center text-xs text-muted-foreground animate-pulse">Loading...</div>
           ) : (
-            groups.map((g) => (
-              <label key={g.id} className="flex items-center gap-2 p-2 rounded-md hover:bg-background cursor-pointer transition-colors border border-transparent hover:border-border">
-                <Checkbox checked={selectedGroupIds.has(String(g.id))} onCheckedChange={(c) => onToggleGroup(String(g.id), !!c)} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{g.name}</p>
-                  <p className="text-[10px] text-muted-foreground tabular-nums">{g.contact_count || 0} contacts</p>
-                </div>
-              </label>
-            ))
+            sortedGroups.map((g, idx) => {
+              const gid = String(g.id);
+              const isSelected = selectedGroupIds.has(gid);
+              const members = groupMembers[gid] || new Set();
+              const selectedInGroupCount = Array.from(members).filter(cid => {
+                const isCidManual = manualContactIds.has(cid);
+                const isCidExcluded = excludedContactIds.has(cid);
+                return (isSelected || isCidManual) && !isCidExcluded;
+              }).length;
+              const totalInGroup = g.contact_count || members.size || 0;
+              const isAllSelected = totalInGroup > 0 && selectedInGroupCount === totalInGroup;
+              
+              const showDivider = idx > 0 && selectedGroupIds.has(String(sortedGroups[idx-1].id)) && !isSelected;
+
+              return (
+                <Fragment key={gid}>
+                  {showDivider && <Separator className="my-1 opacity-50" />}
+                  <label className={cn(
+                    "flex items-center gap-2 p-2 rounded-md hover:bg-background cursor-pointer transition-colors border border-transparent hover:border-border",
+                    isSelected && "bg-primary/5 border-l-2 border-l-primary/30"
+                  )}>
+                    <Checkbox checked={isSelected} onCheckedChange={(c) => onToggleGroup(gid, !!c)} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-1">
+                        <p className="text-sm font-medium truncate">{g.name}</p>
+                        {totalInGroup > 0 && (
+                          <span className={cn(
+                            "text-[9px] px-1.5 py-0.5 rounded-full font-bold tabular-nums",
+                            isAllSelected ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                          )}>
+                            {selectedInGroupCount}/{totalInGroup}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </label>
+                </Fragment>
+              );
+            })
           )}
         </div>
       </div>
 
       <div className="flex flex-col border rounded-lg bg-muted/30 overflow-hidden">
-        <div className="p-2 border-b bg-muted/50 rounded-t-lg flex items-center gap-2">
-          <div className="relative flex-1">
-            <Search className="absolute left-2 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-            <Input placeholder="Search contacts..." className="h-8 pl-8 text-xs bg-background" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <div className="p-2 border-b bg-muted/50 rounded-t-lg flex flex-col gap-2">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1">
+              <Button variant="outline" size="sm" className="h-7 text-[10px] px-2 font-bold uppercase tracking-tight" onClick={onSelectAll}>Select All</Button>
+              <Button variant="outline" size="sm" className="h-7 text-[10px] px-2 font-bold uppercase tracking-tight" onClick={onClearAll}>Clear All</Button>
+            </div>
+            <div className="flex items-center gap-2 border rounded-md px-2 py-0.5 bg-background">
+              <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-tight">Selected Only</span>
+              <Switch checked={showSelectedOnly} onCheckedChange={setShowSelectedOnly} className="h-4 w-7 scale-[0.7]" />
+            </div>
           </div>
-          <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-bold">
-            {contacts.length}
-          </span>
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-2 top-2.5 h-3 w-3 text-muted-foreground" />
+              <Input placeholder="Search contacts..." className="h-8 pl-7 text-xs bg-background" value={search} onChange={(e) => setSearch(e.target.value)} />
+            </div>
+            <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-bold">
+              {filteredContacts.length}
+            </span>
+          </div>
         </div>
         <div className="flex-1 overflow-y-auto p-2 space-y-1">
           {loading ? (
@@ -157,31 +226,30 @@ const TargetingPanel = memo(({
           ) : filteredContacts.length === 0 ? (
             <div className="py-8 text-center text-xs text-muted-foreground italic">No contacts found.</div>
           ) : (
-            filteredContacts.map((c) => {
+            filteredContacts.map((c, idx) => {
               const cid = String(c.id ?? c.contact_id);
               const fullName = [c.first_name, c.last_name].filter(Boolean).join(" ") || c.email;
-              const inGroupSelection = Object.entries(groupMembers).some(([gid, members]) =>
-                selectedGroupIds.has(gid) && members.has(cid)
-              );
-              const isManual = manualContactIds.has(cid);
-              const isExcluded = excludedContactIds.has(cid);
-              const isSelected = (inGroupSelection || isManual) && !isExcluded;
-              const isViaGroup = isSelected && !isManual;
+              const isSelected = isContactSelected(c);
+              const isViaGroup = isSelected && !manualContactIds.has(cid);
+              const showDivider = idx > 0 && isContactSelected(filteredContacts[idx-1]) && !isSelected;
 
               return (
-                <label key={cid} className={cn(
-                  "flex items-center gap-2 p-2 rounded-md hover:bg-background cursor-pointer transition-colors border border-transparent hover:border-border",
-                  isViaGroup && "bg-muted/60"
-                )}>
-                  <Checkbox checked={isSelected} onCheckedChange={(checked) => onToggleContact(cid, !!checked)} />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium truncate">{fullName}</p>
-                      {isViaGroup && <span className="text-[9px] text-muted-foreground uppercase font-bold tracking-tighter">via group</span>}
+                <Fragment key={cid}>
+                  {showDivider && <Separator className="my-1 opacity-50" />}
+                  <label className={cn(
+                    "flex items-center gap-2 p-2 rounded-md hover:bg-background cursor-pointer transition-colors border border-transparent hover:border-border",
+                    isSelected && "bg-primary/5 border-l-2 border-l-primary/30"
+                  )}>
+                    <Checkbox checked={isSelected} onCheckedChange={(checked) => onToggleContact(cid, !!checked)} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-medium truncate">{fullName}</p>
+                        {isViaGroup && <span className="text-[9px] text-muted-foreground uppercase font-bold tracking-tighter">via group</span>}
+                      </div>
+                      <p className="text-[10px] text-muted-foreground truncate">{c.email}</p>
                     </div>
-                    <p className="text-[10px] text-muted-foreground truncate">{c.email}</p>
-                  </div>
-                </label>
+                  </label>
+                </Fragment>
               );
             })
           )}
@@ -272,9 +340,11 @@ function CreateCampaignModal({ open, onClose, onCreate, preselectedGroup }: Crea
   useEffect(() => {
     if (open) {
       setStep(1); setName(""); setGreeting(""); setInstructions("");
-      setSelectedGroupIds(new Set(preselectedGroup ? [preselectedGroup] : []));
-      setManualContactIds(new Set()); setExcludedContactIds(new Set());
-      setGroups([]); setContacts([]); setGroupMembers({});
+      const initialGroups = new Set<string>(preselectedGroup ? [preselectedGroup] : []);
+      setSelectedGroupIds(initialGroups);
+      setManualContactIds(new Set());
+      setExcludedContactIds(new Set());
+      setContacts([]); setGroupMembers({});
       setLocalFields([]); setShowFieldForm(false); setEditingFieldIndex(null);
       setScheduleType("immediate"); setScheduledStartAt(null);
       setCallStartTime("09:00"); setCallEndTime("18:00");
@@ -283,6 +353,18 @@ function CreateCampaignModal({ open, onClose, onCreate, preselectedGroup }: Crea
       createRef.current = false;
     }
   }, [open, preselectedGroup]);
+
+  function handleSelectAll() {
+    const allIds = contacts.map(c => String(c.id ?? c.contact_id));
+    setManualContactIds(new Set(allIds));
+    setExcludedContactIds(new Set());
+  }
+
+  function handleClearAll() {
+    setManualContactIds(new Set());
+    setExcludedContactIds(new Set());
+    setSelectedGroupIds(new Set());
+  }
 
   useEffect(() => {
     if (step === 2 && groups.length === 0) fetchTargetingData();
@@ -411,7 +493,6 @@ function CreateCampaignModal({ open, onClose, onCreate, preselectedGroup }: Crea
       if (!campaignId) throw new Error("Failed to get campaign ID");
       for (const gid of Array.from(selectedGroupIds)) {
         await supabase.rpc("f_add_contact_group_to_campaign", { p_campaign_id: String(campaignId), p_contact_group_id: String(gid) });
-        await supabase.rpc("f_add_group_contacts_to_campaign", { p_campaign_id: String(campaignId), p_group_id: String(gid) });
       }
       if (allSelectedContactIds.size > 0) {
         await supabase.rpc("f_add_contacts_to_campaign", { p_campaign_id: String(campaignId), p_contact_ids: Array.from(allSelectedContactIds) });
@@ -438,7 +519,10 @@ function CreateCampaignModal({ open, onClose, onCreate, preselectedGroup }: Crea
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className={cn(
+        "max-h-[90vh] transition-all duration-300 flex flex-col overflow-hidden",
+        step === 2 ? "sm:max-w-3xl" : "sm:max-w-lg"
+      )}>
         <DialogHeader>
           <DialogTitle>Create Campaign</DialogTitle>
           <DialogDescription>Set up your campaign in 4 steps.</DialogDescription>
@@ -463,7 +547,7 @@ function CreateCampaignModal({ open, onClose, onCreate, preselectedGroup }: Crea
         <Separator />
 
         {step === 1 && (
-          <div className="space-y-4 py-2">
+          <div className="space-y-4 py-2 flex-1 overflow-y-auto">
             <div className="space-y-2">
               <Label htmlFor="camp-name">Campaign Name <span className="text-destructive">*</span></Label>
               <Input id="camp-name" placeholder="e.g. Summer Outreach 2026" value={name} onChange={(e) => setName(e.target.value)} />
@@ -554,7 +638,7 @@ function CreateCampaignModal({ open, onClose, onCreate, preselectedGroup }: Crea
         )}
 
         {step === 2 && (
-          <div className="space-y-4 py-2 flex flex-col min-h-0">
+          <div className="space-y-4 py-2 flex-1 flex flex-col min-h-0 overflow-hidden">
             {loadingStep2 ? (
               <div className="flex flex-col items-center justify-center py-8 space-y-3">
                 <div className="h-8 w-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
@@ -571,6 +655,8 @@ function CreateCampaignModal({ open, onClose, onCreate, preselectedGroup }: Crea
                   groupMembers={groupMembers}
                   onToggleGroup={handleToggleGroup}
                   onToggleContact={handleToggleContact}
+                  onSelectAll={handleSelectAll}
+                  onClearAll={handleClearAll}
                   loading={loadingStep2}
                 />
                 <TargetingSummary selectedCount={allSelectedContactIds.size} />
@@ -580,7 +666,7 @@ function CreateCampaignModal({ open, onClose, onCreate, preselectedGroup }: Crea
         )}
 
         {step === 3 && (
-          <div className="space-y-4 py-2">
+          <div className="space-y-4 py-2 flex-1 overflow-y-auto">
             <div className="space-y-3">
               <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Select Schedule</Label>
               <div className="grid gap-2">
@@ -673,7 +759,7 @@ function CreateCampaignModal({ open, onClose, onCreate, preselectedGroup }: Crea
         )}
 
         {step === 4 && (
-          <div className="space-y-4 py-2">
+          <div className="space-y-4 py-2 flex-1 overflow-y-auto">
             <div className="rounded-lg border border-border divide-y divide-border text-sm">
               <div className="flex justify-between px-4 py-2.5"><span className="text-muted-foreground">Name</span><span className="font-medium">{name}</span></div>
               <div className="flex justify-between px-4 py-2.5">
@@ -1352,6 +1438,18 @@ const EditCampaignModal = memo(({ open, onClose, onUpdate, campaign }: EditCampa
     }
   }
 
+  function handleSelectAll() {
+    const allIds = contacts.map(c => String(c.id ?? c.contact_id));
+    setManualContactIds(new Set(allIds));
+    setExcludedContactIds(new Set());
+  }
+
+  function handleClearAll() {
+    setManualContactIds(new Set());
+    setExcludedContactIds(new Set());
+    setSelectedGroupIds(new Set());
+  }
+
   function handleToggleContact(cid: string, checked: boolean) {
     const inGroupSelection = Object.entries(groupMembers).some(([gid, members]) =>
       selectedGroupIds.has(gid) && members.has(cid)
@@ -1449,7 +1547,6 @@ const EditCampaignModal = memo(({ open, onClose, onUpdate, campaign }: EditCampa
 
         for (const gid of groupsToAdd) {
           await supabase.rpc("f_add_contact_group_to_campaign", { p_campaign_id: campaign.id, p_contact_group_id: gid });
-          await supabase.rpc("f_add_group_contacts_to_campaign", { p_campaign_id: campaign.id, p_group_id: gid });
         }
 
         console.log("contactsToRemove:", contactsToRemove);
@@ -1473,7 +1570,10 @@ const EditCampaignModal = memo(({ open, onClose, onUpdate, campaign }: EditCampa
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className={cn(
+        "max-h-[90vh] transition-all duration-300 flex flex-col overflow-hidden",
+        activeTab === 'targeting' ? "sm:max-w-3xl" : "sm:max-w-2xl"
+      )}>
         <DialogHeader>
           <DialogTitle>Edit Campaign</DialogTitle>
           <DialogDescription>
@@ -1490,7 +1590,7 @@ const EditCampaignModal = memo(({ open, onClose, onUpdate, campaign }: EditCampa
 
         {error && <div className="p-3 rounded-md bg-destructive/10 border border-destructive/20 text-destructive text-sm">{error}</div>}
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full flex-1 flex flex-col min-h-0">
           <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="details">Details</TabsTrigger>
             <TabsTrigger value="targeting" disabled={!isDraft}>Targeting</TabsTrigger>
@@ -1498,14 +1598,14 @@ const EditCampaignModal = memo(({ open, onClose, onUpdate, campaign }: EditCampa
             <TabsTrigger value="schedule">Schedule</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="details" className="space-y-4 py-4">
+          <TabsContent value="details" className="space-y-4 py-4 flex-1 overflow-y-auto">
             <RenderField label="Campaign Name" value={name} id="edit-name" onChange={setName} isLocked={isLocked} />
             <RenderField label="Description" value={description} id="edit-desc" onChange={setDescription} isLocked={isLocked} />
             <RenderField label="Greeting" value={greeting} id="edit-greeting" onChange={setGreeting} isLocked={isLocked} />
             <RenderField label="Instructions" value={instructions} id="edit-instructions" onChange={setInstructions} isLocked={isLocked} />
           </TabsContent>
 
-          <TabsContent value="targeting" className="py-4 space-y-4">
+          <TabsContent value="targeting" className="py-2 space-y-4 flex-1 flex flex-col min-h-0 overflow-hidden">
             {loadingTargeting ? (
               <div className="py-12 text-center text-sm text-muted-foreground animate-pulse">Loading targeting data...</div>
             ) : (
@@ -1518,12 +1618,15 @@ const EditCampaignModal = memo(({ open, onClose, onUpdate, campaign }: EditCampa
                 groupMembers={groupMembers}
                 onToggleGroup={handleToggleGroup}
                 onToggleContact={handleToggleContact}
+                onSelectAll={handleSelectAll}
+                onClearAll={handleClearAll}
+                loading={loadingTargeting}
               />
             )}
             <TargetingSummary selectedCount={allSelectedContactIds.size} />
           </TabsContent>
 
-          <TabsContent value="fields" className="py-4 space-y-4">
+          <TabsContent value="fields" className="py-4 space-y-4 flex-1 overflow-y-auto">
             <div className="flex flex-col border rounded-lg bg-muted/30">
               <div className="p-2.5 border-b bg-muted/50 rounded-t-lg flex items-center justify-between">
                 <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
@@ -1597,7 +1700,7 @@ const EditCampaignModal = memo(({ open, onClose, onUpdate, campaign }: EditCampa
             )}
           </TabsContent>
 
-          <TabsContent value="schedule" className="py-4 space-y-4">
+          <TabsContent value="schedule" className="py-4 space-y-4 flex-1 overflow-y-auto">
             <div className="space-y-4">
               <div className="space-y-3">
                 <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Select Schedule</Label>
