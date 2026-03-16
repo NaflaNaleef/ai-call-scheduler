@@ -40,8 +40,12 @@ export default function SignInPage() {
         setError("Invalid email or password. Please try again.");
         return;
       }
-      await login(email, password);
-      navigate(from, { replace: true });
+      try {
+        await login(email, password, rememberMe);
+        navigate(from, { replace: true });
+      } catch (err: any) {
+        setError(err.message || "Invalid email or password. Please try again.");
+      }
     } finally {
       setLoading(false);
     }

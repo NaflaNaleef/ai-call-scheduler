@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
-import { supabase } from "@/lib/supabase";
+import { supabase, REMEMBER_KEY } from "@/lib/supabase";
 
 export interface AuthUser {
   id: string;
@@ -15,7 +15,7 @@ interface AuthContextValue {
   isAuthenticated: boolean;
   user: AuthUser | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string, remember?: boolean) => Promise<void>;
   signUp: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
 }
@@ -119,9 +119,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  const login = async (email: string, password: string) => {
+  const login = async (email: string, password: string, remember: boolean = false) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw new Error(error.message);
+
+    if (remember) {
+      localStorage.setItem(REMEMBER_KEY, "true");
+      // Copy session from sessionStorage to localStorage for persistence
+      const tokenKey = Object.keys(sessionStorage).find(k => k.includes("sb-") && k.includes("-auth-token"));
+      if (tokenKey) localStorage.setItem(tokenKey, sessionStorage.getItem(tokenKey)!);
+    } else {
+      localStorage.removeItem(REMEMBER_KEY);
+      // Clear any previously remembered session
+      const tokenKey = Object.keys(localStorage).find(k => k.includes("sb-") && k.includes("-auth-token"));
+      if (tokenKey) localStorage.removeItem(tokenKey);
+    }
   };
 
   const signUp = async (email: string, password: string) => {
@@ -130,6 +142,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = async () => {
+    localStorage.removeItem(REMEMBER_KEY);
     const { error } = await supabase.auth.signOut();
     if (error) throw new Error(error.message);
   };
