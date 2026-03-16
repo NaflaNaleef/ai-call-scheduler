@@ -624,28 +624,6 @@ export default function ContactsPage() {
             </span>
             <Separator orientation="vertical" className="h-5" />
             <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setGroupPickerOpen(true);
-                setBulkActionType("assign");
-                fetchOrgGroups();
-              }}
-            >
-              <Users className="h-3.5 w-3.5 mr-1" /> Assign to Group
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setGroupPickerOpen(true);
-                setBulkActionType("remove");
-                fetchOrgGroups();
-              }}
-            >
-              <UserMinus className="h-3.5 w-3.5 mr-1" /> Remove from Group
-            </Button>
-            <Button
               variant="danger"
               size="sm"
               onClick={() => setDeleteDialogOpen(true)}
