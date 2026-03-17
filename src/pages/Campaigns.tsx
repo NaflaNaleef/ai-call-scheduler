@@ -107,7 +107,7 @@ interface TargetingPanelProps {
 
 const TargetingPanel = memo(({
   groups, contacts, selectedGroupIds, manualContactIds,
-  excludedContactIds, groupMembers, onToggleGroup, onToggleContact, 
+  excludedContactIds, groupMembers, onToggleGroup, onToggleContact,
   onSelectAll, onClearAll, loading,
 }: TargetingPanelProps) => {
   const [search, setSearch] = useState("");
@@ -166,8 +166,8 @@ const TargetingPanel = memo(({
               }).length;
               const totalInGroup = g.contact_count || members.size || 0;
               const isAllSelected = totalInGroup > 0 && selectedInGroupCount === totalInGroup;
-              
-              const showDivider = idx > 0 && selectedGroupIds.has(String(sortedGroups[idx-1].id)) && !isSelected;
+
+              const showDivider = idx > 0 && selectedGroupIds.has(String(sortedGroups[idx - 1].id)) && !isSelected;
 
               return (
                 <Fragment key={gid}>
@@ -231,7 +231,7 @@ const TargetingPanel = memo(({
               const fullName = [c.first_name, c.last_name].filter(Boolean).join(" ") || c.email;
               const isSelected = isContactSelected(c);
               const isViaGroup = isSelected && !manualContactIds.has(cid);
-              const showDivider = idx > 0 && isContactSelected(filteredContacts[idx-1]) && !isSelected;
+              const showDivider = idx > 0 && isContactSelected(filteredContacts[idx - 1]) && !isSelected;
 
               return (
                 <Fragment key={cid}>
@@ -753,6 +753,9 @@ function CreateCampaignModal({ open, onClose, onCreate, preselectedGroup }: Crea
                     <Input type="time" className="h-8 text-xs" value={callEndTime} onChange={(e) => setCallEndTime(e.target.value)} />
                   </div>
                 </div>
+                <p className="text-[11px] text-muted-foreground">
+                  The daily window during which the AI is allowed to place calls on active days.
+                </p>
               </div>
             )}
           </div>
@@ -1554,7 +1557,7 @@ const EditCampaignModal = memo(({ open, onClose, onUpdate, campaign }: EditCampa
         console.log("allSelectedContactIds:", Array.from(allSelectedContactIds));
 
         for (const gid of groupsToRemove) await supabase.rpc("f_remove_contact_group_from_campaign", { p_campaign_id: campaign.id, p_contact_group_id: gid });
-        if (contactsToAdd.length > 0) await supabase.rpc("f_add_contacts_to_campaign", { p_campaign_id: campaign.id, p_contact_ids: contactsToAdd });
+        await supabase.rpc("f_add_contacts_to_campaign", { p_campaign_id: campaign.id, p_contact_ids: Array.from(allSelectedContactIds) });
         for (const cid of contactsToRemove) await supabase.rpc("f_remove_contact_from_campaign", { p_campaign_id: campaign.id, p_contact_id: cid });
       }
 
@@ -1791,6 +1794,9 @@ const EditCampaignModal = memo(({ open, onClose, onUpdate, campaign }: EditCampa
                       <Input type="time" className="h-8 text-xs" value={callEndTime} onChange={(e) => setCallEndTime(e.target.value)} disabled={isLocked} />
                     </div>
                   </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    The daily window during which the AI is allowed to place calls on active days.
+                  </p>
                 </div>
               )}
             </div>
