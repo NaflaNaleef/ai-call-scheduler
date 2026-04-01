@@ -21,10 +21,11 @@ import {
   SheetDescription,
 } from "@/components/ui/sheet";
 import { Separator } from "@/components/ui/separator";
-import { Play, Search, Phone, CheckCircle, XCircle, Clock, Timer, Loader2, ChevronDown, ChevronRight, Layers } from "lucide-react";
+import { Play, Search, Phone, CheckCircle, XCircle, Clock, Timer, Loader2, RefreshCw, ChevronDown, ChevronRight, Layers } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
+import { CallLog, CallLogDrawer } from "@/components/call-logs/CallLogDrawer";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -126,6 +127,10 @@ export default function CampaignRunsPage() {
   const [drawerSearch, setDrawerSearch] = useState("");
   const [drawerStatusFilter, setDrawerStatusFilter] = useState("all");
   const [drawerPage, setDrawerPage] = useState(1);
+
+  // Call log drawer
+  const [callLogDrawerOpen, setCallLogDrawerOpen] = useState(false);
+  const [selectedCallLog, setSelectedCallLog] = useState<CallLog | null>(null);
 
   // Grouping
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
@@ -362,6 +367,43 @@ export default function CampaignRunsPage() {
   const drawerTotalPages = Math.max(1, Math.ceil(filteredLogs.length / DRAWER_PAGE_SIZE));
   const drawerPaginated = filteredLogs.slice((drawerPage - 1) * DRAWER_PAGE_SIZE, drawerPage * DRAWER_PAGE_SIZE);
 
+  async function openCallLogDrawer(contactRow: CampaignContactRow) {
+    if (contactRow.status.toUpperCase() !== "COMPLETED" || !activeRun) return;
+    try {
+      const { data, error } = await supabase
+        .from("call_logs")
+        .select("*, contacts(first_name, last_name), campaigns(name)")
+        .eq("campaign_run_id", activeRun.id)
+        .eq("contact_id", contactRow.contactId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error || !data) return;
+      const log: CallLog = {
+        id: data.id,
+        campaignId: data.campaign_id,
+        campaignName: data.campaigns?.name ?? activeRun.campaignName,
+        campaignRunId: data.campaign_run_id,
+        contactId: data.contact_id,
+        contactName: [data.contacts?.first_name, data.contacts?.last_name].filter(Boolean).join(" ") || contactRow.contactName,
+        phone: data.phone_number_called ?? contactRow.phone,
+        status: data.status ?? "PENDING",
+        attemptNumber: data.attempt_number ?? 1,
+        callDuration: data.call_duration,
+        collectedData: data.collected_data,
+        transcriptText: data.transcript_text,
+        transcriptJson: data.transcript_json,
+        recordingUrl: data.recording_url,
+        voicemailDetected: data.voicemail_detected ?? false,
+        createdAt: data.created_at,
+      };
+      setSelectedCallLog(log);
+      setCallLogDrawerOpen(true);
+    } catch (err) {
+      console.error("Failed to fetch call log:", err);
+    }
+  }
+
   function openDrawer(run: CampaignRun) {
     setActiveRun(run);
     setDrawerSearch("");
@@ -409,11 +451,27 @@ export default function CampaignRunsPage() {
         return <span>{formatDuration(secs)}</span>;
       },
     },
+    {
+      key: "actions",
+      header: "",
+      render: (item: CampaignContactRow) =>
+        item.status.toUpperCase() === "COMPLETED" ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 text-xs text-primary hover:text-primary"
+            onClick={(e) => { e.stopPropagation(); openCallLogDrawer(item); }}
+          >
+            View Log
+          </Button>
+        ) : null,
+    },
   ];
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <DashboardLayout title="Campaign Runs">
+    <>
+      <DashboardLayout title="Campaign Runs">
       <div className="space-y-4">
         <p className="text-sm text-muted-foreground">
           View execution history of your campaigns. Runs are generated automatically when a campaign is launched.
@@ -443,6 +501,17 @@ export default function CampaignRunsPage() {
               <SelectItem value="LOCKED">Locked</SelectItem>
             </SelectContent>
           </Select>
+
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-9 w-9 shrink-0"
+            onClick={fetchRuns}
+            disabled={loading}
+            title="Refresh Runs"
+          >
+            <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
+          </Button>
         </div>
 
         {/* Loading / Error / Table */}
@@ -623,7 +692,19 @@ export default function CampaignRunsPage() {
 
               {/* Contact Execution Log */}
               <div className="space-y-3 flex-1 min-h-0">
-                <h3 className="text-sm font-semibold">Contact Execution Log</h3>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold">Contact Execution Log</h3>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground hover:text-primary"
+                    onClick={() => activeRun?.id && fetchCallLogs(activeRun.id)}
+                    disabled={logsLoading}
+                    title="Refresh Log"
+                  >
+                    <RefreshCw className={cn("h-3.5 w-3.5", logsLoading && "animate-spin")} />
+                  </Button>
+                </div>
 
                 {activeRun.status === 'SCHEDULED' ? (
                   <div className="flex flex-col items-center justify-center py-12 px-4 rounded-xl border border-dashed border-primary/20 bg-primary/5 text-center space-y-3">
@@ -682,6 +763,7 @@ export default function CampaignRunsPage() {
                           columns={execColumns}
                           data={drawerPaginated}
                           keyExtractor={(e) => e.id}
+                          onRowClick={(item) => openCallLogDrawer(item)}
                         />
                         <PaginationBar
                           page={drawerPage}
@@ -698,5 +780,12 @@ export default function CampaignRunsPage() {
         </SheetContent>
       </Sheet>
     </DashboardLayout>
+
+    <CallLogDrawer
+      log={selectedCallLog}
+      open={callLogDrawerOpen}
+      onClose={() => setCallLogDrawerOpen(false)}
+    />
+    </>
   );
 }

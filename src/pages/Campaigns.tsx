@@ -67,7 +67,7 @@ const statusMeta: Record<
   { variant: "neutral" | "warning" | "info" | "success"; icon: React.ElementType; label: string }
 > = {
   DRAFT: { variant: "neutral", icon: FileEdit, label: "Draft" },
-  LOCKED: { variant: "warning", icon: Lock, label: "Locked" },
+  LOCKED: { variant: "success", icon: Rocket, label: "Launched" },
   SCHEDULED: { variant: "info", icon: Clock, label: "Scheduled" },
 };
 
@@ -314,6 +314,8 @@ function CreateCampaignModal({ open, onClose, onCreate, preselectedGroup }: Crea
   const [groupMembers, setGroupMembers] = useState<Record<string, Set<string>>>({});
   const [loadingStep2, setLoadingStep2] = useState(false);
   const [createLoading, setCreateLoading] = useState(false);
+  const [launchLoading, setLaunchLoading] = useState(false);
+  const [createdCampaignId, setCreatedCampaignId] = useState<string | null>(null);
   const createRef = useRef(false);
 
   // Schedule state
@@ -350,6 +352,7 @@ function CreateCampaignModal({ open, onClose, onCreate, preselectedGroup }: Crea
       setCallStartTime("09:00"); setCallEndTime("18:00");
       setDaysOfWeek(['MON', 'TUE', 'WED', 'THU', 'FRI']);
       setStartDate(null); setEndDate(null);
+      setCreatedCampaignId(null); setLaunchLoading(false);
       createRef.current = false;
     }
   }, [open, preselectedGroup]);
@@ -504,12 +507,35 @@ function CreateCampaignModal({ open, onClose, onCreate, preselectedGroup }: Crea
           p_description: f.description, p_field_type: f.fieldType, p_is_required: f.isRequired, p_created_by: user.dbId,
         });
       }
-      onCreate(); onClose();
+      setCreatedCampaignId(String(campaignId));
+      onCreate();
+      setStep(5);
     } catch (err: any) { console.error("handleCreate:", err); createRef.current = false; }
     finally { setCreateLoading(false); }
   }
 
-  const stepTitles = ["Campaign Setup", "Targeting", "Schedule", "Review"];
+  async function handleLaunchNow() {
+    if (!createdCampaignId) return;
+    setLaunchLoading(true);
+    try {
+      const isScheduled = scheduleType === 'run_once' || scheduleType === 'recurring';
+      const scheduledAt = scheduleType === 'run_once' ? new Date(scheduledStartAt!).toISOString() : null;
+      const { error } = await supabase.rpc("f_create_campaign_run", {
+        p_camp_id: createdCampaignId,
+        p_initial_status: isScheduled ? "SCHEDULED" : "RUNNING",
+        p_scheduled_at: scheduledAt,
+      });
+      if (error) throw error;
+      onCreate();
+      onClose();
+    } catch (err: any) {
+      console.error("handleLaunchNow:", err);
+    } finally {
+      setLaunchLoading(false);
+    }
+  }
+
+  const stepTitles = ["Campaign Setup", "Targeting", "Schedule", "Review", "Launch"];
   const canNext1 = name.trim().length > 0 && greeting.trim().length > 0 && instructions.trim().length > 0;
   const canNext2 = allSelectedContactIds.size > 0;
   const canNext3 =
@@ -525,7 +551,7 @@ function CreateCampaignModal({ open, onClose, onCreate, preselectedGroup }: Crea
       )}>
         <DialogHeader>
           <DialogTitle>Create Campaign</DialogTitle>
-          <DialogDescription>Set up your campaign in 4 steps.</DialogDescription>
+          <DialogDescription>Set up your campaign in 5 steps.</DialogDescription>
         </DialogHeader>
 
         {/* Step indicator */}
@@ -783,10 +809,63 @@ function CreateCampaignModal({ open, onClose, onCreate, preselectedGroup }: Crea
           </div>
         )}
 
+        {step === 5 && (
+          <div className="space-y-4 py-2 flex-1 overflow-y-auto">
+            {/* Success message */}
+            <div className="flex items-center gap-3 p-3 rounded-lg border border-accent/30 bg-accent/10">
+              <CheckCircle2 className="h-5 w-5 text-accent shrink-0" />
+              <div>
+                <p className="text-sm font-semibold text-accent">Campaign created successfully!</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Your campaign is saved as a draft. Choose what to do next.</p>
+              </div>
+            </div>
+
+            {/* Launch Now option */}
+            <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 space-y-3">
+              <div className="flex items-start gap-3">
+                <Rocket className="h-5 w-5 text-primary shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold">Launch Now</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Start the campaign immediately. Calls will be placed to all 
+                    <strong> {allSelectedContactIds.size} contacts</strong> based on your schedule.
+                    <span className="block mt-1 text-yellow-600 dark:text-yellow-400 font-medium">
+                      ⚠️ Once launched the campaign cannot be edited.
+                    </span>
+                  </p>
+                </div>
+              </div>
+              <Button className="w-full" onClick={handleLaunchNow} disabled={launchLoading}>
+                <Rocket className="h-4 w-4 mr-2" />
+                {launchLoading ? "Launching..." : "Launch Campaign Now 🚀"}
+              </Button>
+            </div>
+
+            {/* Launch Later option */}
+            <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-3">
+              <div className="flex items-start gap-3">
+                <Clock className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold">Launch Later</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Your campaign is safely saved as a draft. You can review, edit contacts or fields, 
+                    and launch it anytime from the Campaigns page.
+                  </p>
+                </div>
+              </div>
+              <Button variant="outline" className="w-full" onClick={() => { onCreate(); onClose(); }}>
+                Save as Draft — I'll Launch Later
+              </Button>
+            </div>
+          </div>
+        )}
+
         <DialogFooter className="flex items-center justify-between sm:justify-between gap-2">
-          <Button variant="outline" onClick={() => (step > 1 ? setStep(step - 1) : onClose())}>
-            {step > 1 ? <><ChevronLeft className="h-4 w-4 mr-1" /> Back</> : "Cancel"}
-          </Button>
+          {step < 5 && (
+            <Button variant="outline" onClick={() => (step > 1 ? setStep(step - 1) : onClose())}>
+              {step > 1 ? <><ChevronLeft className="h-4 w-4 mr-1" /> Back</> : "Cancel"}
+            </Button>
+          )}
           {step < 4 ? (
             <button
               onClick={() => setStep(step + 1)}
@@ -801,11 +880,11 @@ function CreateCampaignModal({ open, onClose, onCreate, preselectedGroup }: Crea
             >
               Next <ChevronRight className="h-4 w-4 ml-1" />
             </button>
-          ) : (
+          ) : step === 4 ? (
             <Button onClick={handleCreate} disabled={createLoading}>
-              <Megaphone className="h-4 w-4 mr-1" /> {createLoading ? "Creating..." : "Create Campaign"}
+              <CheckCircle2 className="h-4 w-4 mr-1" /> {createLoading ? "Creating..." : "Save & Continue"}
             </Button>
-          )}
+          ) : null}
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -938,7 +1017,7 @@ function CampaignDetailDrawer({
   // ── Derived values ──────────────────────────────────────────────────────────
   if (!listCampaign) return null;
   const status = listCampaign.status || "DRAFT";
-  const meta = statusMeta[status] || statusMeta.DRAFT;
+  const meta = statusMeta[status] || statusMeta.LOCKED;
   const isDraft = status === "DRAFT";
   const hasContacts = listCampaign.totalRecipients > 0;
   const hasFields = fields.length > 0;
@@ -1959,7 +2038,7 @@ export default function CampaignsPage() {
       key: "status", header: "Status",
       render: (item: Campaign) => {
         const m = statusMeta[item.status || "DRAFT"];
-        if (!m) return <StatusBadge variant="neutral"><FileEdit className="h-3 w-3 mr-1 inline" />Unknown</StatusBadge>;
+        if (!m) return <StatusBadge variant="success"><Rocket className="h-3 w-3 mr-1 inline" />Launched</StatusBadge>;
         return <StatusBadge variant={m.variant}><m.icon className="h-3 w-3 mr-1 inline" />{m.label}</StatusBadge>;
       },
     },
