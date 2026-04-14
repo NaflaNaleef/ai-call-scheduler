@@ -826,7 +826,7 @@ function CreateCampaignModal({ open, onClose, onCreate, preselectedGroup }: Crea
                 <div>
                   <p className="text-sm font-semibold">Launch Now</p>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Start the campaign immediately. Calls will be placed to all 
+                    Start the campaign immediately. Calls will be placed to all
                     <strong> {allSelectedContactIds.size} contacts</strong> based on your schedule.
                     <span className="block mt-1 text-yellow-600 dark:text-yellow-400 font-medium">
                       ⚠️ Once launched the campaign cannot be edited.
@@ -847,7 +847,7 @@ function CreateCampaignModal({ open, onClose, onCreate, preselectedGroup }: Crea
                 <div>
                   <p className="text-sm font-semibold">Launch Later</p>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Your campaign is safely saved as a draft. You can review, edit contacts or fields, 
+                    Your campaign is safely saved as a draft. You can review, edit contacts or fields,
                     and launch it anytime from the Campaigns page.
                   </p>
                 </div>
@@ -1145,8 +1145,8 @@ function CampaignDetailDrawer({
             {fullCampaign?.schedule_type === 'recurring' && fullCampaign?.status === 'LOCKED' && !loading && (
               <div className="mb-4">
                 {fullCampaign.is_active ? (
-                  <Button 
-                    variant="outline" 
+                  <Button
+                    variant="outline"
                     className="w-full text-yellow-600 border-yellow-300 hover:bg-yellow-50 hover:text-yellow-700 hover:border-yellow-400"
                     onClick={async () => {
                       setGenericConfirmLoading(true);
@@ -1163,8 +1163,8 @@ function CampaignDetailDrawer({
                     {genericConfirmLoading ? "Pausing..." : "Pause Campaign"}
                   </Button>
                 ) : (
-                  <Button 
-                    variant="outline" 
+                  <Button
+                    variant="outline"
                     className="w-full text-green-600 border-green-300 hover:bg-green-50 hover:text-green-700 hover:border-green-400"
                     onClick={async () => {
                       setGenericConfirmLoading(true);
@@ -1225,7 +1225,7 @@ function CampaignDetailDrawer({
             <Separator />
 
             {/* Launch Run section */}
-            <div 
+            <div
               ref={launchRef}
               className={cn(
                 "py-4 space-y-3 transition-all duration-500",
@@ -1454,7 +1454,7 @@ const EditCampaignModal = memo(({ open, onClose, onUpdate, campaign }: EditCampa
   const [fError, setFError] = useState<string | null>(null);
 
   const isDraft = campaign?.status === "DRAFT";
-  const isLocked = campaign?.status === "LOCKED";
+  const isLocked = campaign?.status !== "DRAFT";
 
   useEffect(() => {
     if (campaign && open) {
@@ -1977,9 +1977,9 @@ function GenericConfirmDialog({ open, onClose, onConfirm, loading, title, descri
         </DialogHeader>
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={loading}>Cancel</Button>
-          <Button 
+          <Button
             className={variantStyles[confirmVariant]}
-            onClick={onConfirm} 
+            onClick={onConfirm}
             disabled={loading}
           >
             {loading ? "Processing..." : confirmLabel}
@@ -2014,7 +2014,7 @@ export default function CampaignsPage() {
   // Generic confirm states
   const [genericConfirmOpen, setGenericConfirmOpen] = useState(false);
   const [genericConfirmData, setGenericConfirmData] = useState<{
-    title: string; description: string; confirmLabel: string; 
+    title: string; description: string; confirmLabel: string;
     confirmVariant: "amber" | "green"; onConfirm: () => void;
   } | null>(null);
   const [genericConfirmLoading, setGenericConfirmLoading] = useState(false);
@@ -2144,10 +2144,10 @@ export default function CampaignsPage() {
         <div className="flex items-center gap-1 justify-end" onClick={(e) => e.stopPropagation()}>
           {item.schedule_type === 'recurring' && item.status === 'LOCKED' && (
             item.isActive ? (
-              <Button 
-                variant="outline" 
-                size="sm" 
-                className="h-7 text-[11px] text-yellow-600 border-yellow-300 hover:bg-yellow-50 hover:text-yellow-700" 
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-[11px] text-yellow-600 border-yellow-300 hover:bg-yellow-50 hover:text-yellow-700"
                 onClick={() => {
                   setGenericConfirmData({
                     title: "Pause Campaign",
@@ -2170,10 +2170,10 @@ export default function CampaignsPage() {
                 <PauseCircle className="h-3.5 w-3.5 mr-1" /> Pause
               </Button>
             ) : (
-              <Button 
-                variant="outline" 
-                size="sm" 
-                className="h-7 text-[11px] text-green-600 border-green-300 hover:bg-green-50 hover:text-green-700" 
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-[11px] text-green-600 border-green-300 hover:bg-green-50 hover:text-green-700"
                 onClick={() => {
                   setGenericConfirmData({
                     title: "Resume Campaign",
@@ -2198,10 +2198,10 @@ export default function CampaignsPage() {
             )
           )}
           {item.status === 'DRAFT' && (
-            <Button 
-              variant="outline" 
-              size="sm" 
-              className="h-7 text-[11px] text-emerald-600 border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700" 
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-[11px] text-emerald-600 border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700"
               onClick={() => {
                 setShouldHighlightLaunch(true);
                 openDetail(item);
@@ -2280,7 +2280,7 @@ export default function CampaignsPage() {
         open={genericConfirmOpen}
         onClose={() => setGenericConfirmOpen(false)}
         loading={genericConfirmLoading}
-        {...(genericConfirmData || { title: "", description: "", confirmLabel: "", confirmVariant: "default", onConfirm: () => {} })}
+        {...(genericConfirmData || { title: "", description: "", confirmLabel: "", confirmVariant: "default", onConfirm: () => { } })}
       />
     </DashboardLayout>
   );
