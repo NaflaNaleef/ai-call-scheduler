@@ -16,6 +16,7 @@ interface AuthContextValue {
   user: AuthUser | null;
   loading: boolean;
   login: (email: string, password: string, remember?: boolean) => Promise<void>;
+  loginWithOAuth: (provider: 'google' | 'azure') => Promise<void>;
   signUp: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
 }
@@ -141,6 +142,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (error) throw new Error(error.message);
   };
 
+  const loginWithOAuth = async (provider: 'google' | 'azure') => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider,
+      options: { redirectTo: window.location.origin }
+    });
+    if (error) throw new Error(error.message);
+  };
+
   const logout = async () => {
     localStorage.removeItem(REMEMBER_KEY);
     const { error } = await supabase.auth.signOut();
@@ -148,7 +157,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, user, loading, login, signUp, logout }}>
+    <AuthContext.Provider value={{ isAuthenticated, user, loading, login, loginWithOAuth, signUp, logout }}>
       {children}
     </AuthContext.Provider>
   );
