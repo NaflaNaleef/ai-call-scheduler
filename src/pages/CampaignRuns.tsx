@@ -26,6 +26,10 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 import { CallLog, CallLogDrawer } from "@/components/call-logs/CallLogDrawer";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+  DialogDescription, DialogFooter,
+} from "@/components/ui/dialog";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -45,6 +49,8 @@ interface CampaignRun {
   callStartTime?: string;
   callEndTime?: string;
   daysOfWeek?: string[];
+  attemptNumber: number;
+  parentRunId: string | null;
 }
 
 interface CampaignContactRow {
@@ -55,6 +61,9 @@ interface CampaignContactRow {
   status: string; // PENDING | COMPLETED | SKIPPED
   startedCallingAt: string | null;
   stoppedCallingAt: string | null;
+  attemptReached: number | null;
+  totalAttempts: number;
+  campaignRunId: string;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -92,6 +101,16 @@ function mapContactStatus(status: string): "success" | "error" | "info" | "neutr
     case "PENDING": return "neutral";
     default: return "info";
   }
+}
+
+function getChainRunIds(rootRunId: string, allRuns: CampaignRun[]): string[] {
+  const chainIds: string[] = [];
+  function collect(id: string) {
+    chainIds.push(id);
+    allRuns.filter(r => r.parentRunId === id).forEach(r => collect(r.id));
+  }
+  collect(rootRunId);
+  return chainIds;
 }
 
 function contactStatusLabel(status: string): string {
@@ -132,6 +151,11 @@ export default function CampaignRunsPage() {
   // Call log drawer
   const [callLogDrawerOpen, setCallLogDrawerOpen] = useState(false);
   const [selectedCallLog, setSelectedCallLog] = useState<CallLog | null>(null);
+
+  // Retry logic
+  const [retryLoading, setRetryLoading] = useState(false);
+  const [retrySuccessRunId, setRetrySuccessRunId] = useState<string | null>(null);
+  const [confirmRetryRun, setConfirmRetryRun] = useState<CampaignRun | null>(null);
 
   // Grouping
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
@@ -174,10 +198,14 @@ export default function CampaignRunsPage() {
         callStartTime: r.call_start_time,
         callEndTime: r.call_end_time,
         daysOfWeek: r.days_of_week,
+        attemptNumber: r.attempt_number ?? 1,
+        parentRunId: r.parent_run_id,
       }));
       setRuns(mapped);
+      return mapped; // Return for chain usage if needed
     } catch (e: any) {
       setError(e.message ?? "Failed to load campaign runs");
+      return [];
     } finally {
       setLoading(false);
     }
@@ -186,22 +214,54 @@ export default function CampaignRunsPage() {
   useEffect(() => { fetchRuns(); }, [fetchRuns]);
 
   // ── Fetch campaign_contacts for drawer (source of truth during & after run) ─
-  async function fetchCallLogs(runId: string) {
+  async function fetchCallLogs(runId: string, allRuns: CampaignRun[]) {
+    if (!allRuns.length) return;
     setLogsLoading(true);
     setCallLogs([]);
     setAvgDuration(null);
     try {
+      // 1. Find the root run of this chain
+      let rootId = runId;
+      let current = allRuns.find(r => r.id === rootId);
+      while (current?.parentRunId) {
+        rootId = current.parentRunId;
+        current = allRuns.find(r => r.id === rootId);
+      }
+
+      // 2. Get all run IDs in this chain
+      const chainRunIds = getChainRunIds(rootId, allRuns);
+      const chainRuns = allRuns.filter(r => chainRunIds.includes(r.id));
+
+      // 3. Fetch contacts from all runs in the chain
       const { data, error: err } = await supabase
         .from("campaign_contacts")
-        .select("id, contact_id, phone_number, status, started_calling_at, stopped_calling_at, contacts(first_name, last_name)")
-        .eq("campaign_run_id", runId)
+        .select("id, contact_id, phone_number, status, started_calling_at, stopped_calling_at, campaign_run_id, created_at, contacts(first_name, last_name)")
+        .in("campaign_run_id", chainRunIds)
         .order("created_at", { ascending: true });
 
       if (err) throw err;
 
-      const rows: CampaignContactRow[] = (data ?? []).map((cc: any) => {
+      // 4. De-duplicate contacts (COMPLETED wins, otherwise most recent)
+      const bestRecords: Record<string, any> = {};
+      (data ?? []).forEach((cc: any) => {
+        const existing = bestRecords[cc.contact_id];
+        if (!existing) {
+          bestRecords[cc.contact_id] = cc;
+        } else {
+          const isBetter =
+            cc.status === 'COMPLETED' ||
+            (existing.status !== 'COMPLETED' && (new Date(cc.stopped_calling_at || cc.created_at).getTime() > new Date(existing.stopped_calling_at || existing.created_at).getTime()));
+
+          if (isBetter) bestRecords[cc.contact_id] = cc;
+        }
+      });
+
+      // 5. Map rows with chain metadata
+      const rows: CampaignContactRow[] = Object.values(bestRecords).map((cc: any) => {
         const firstName = cc.contacts?.first_name ?? "";
         const lastName = cc.contacts?.last_name ?? "";
+        const runInfo = chainRuns.find(r => r.id === cc.campaign_run_id);
+
         return {
           id: cc.id,
           contactId: cc.contact_id,
@@ -210,11 +270,23 @@ export default function CampaignRunsPage() {
           status: cc.status ?? "PENDING",
           startedCallingAt: cc.started_calling_at,
           stoppedCallingAt: cc.stopped_calling_at,
+          campaignRunId: cc.campaign_run_id,
+          attemptReached: cc.status === 'COMPLETED' ? (runInfo?.attemptNumber ?? null) : null,
+          totalAttempts: chainRunIds.length
         };
       });
+
+      rows.sort((a, b) => {
+        if (a.status === 'COMPLETED' && b.status !== 'COMPLETED') return -1;
+        if (a.status !== 'COMPLETED' && b.status === 'COMPLETED') return 1;
+        if (a.status === 'COMPLETED' && b.status === 'COMPLETED') {
+          return (a.attemptReached ?? 1) - (b.attemptReached ?? 1);
+        }
+        return 0;
+      });
+
       setCallLogs(rows);
 
-      // Avg duration from started/stopped timestamps
       const durations = rows
         .filter(r => r.startedCallingAt && r.stoppedCallingAt)
         .map(r => Math.round((new Date(r.stoppedCallingAt!).getTime() - new Date(r.startedCallingAt!).getTime()) / 1000))
@@ -232,35 +304,32 @@ export default function CampaignRunsPage() {
   useEffect(() => {
     if (!activeRun?.id) return;
 
-    // Initial fetch
-    fetchCallLogs(activeRun.id);
+    fetchCallLogs(activeRun.id, runs);
 
-    // Real-time subscription on campaign_contacts for this run
     const channel = supabase
       .channel(`campaign_contacts_${activeRun.id}`)
       .on(
         'postgres_changes',
         {
-          event: '*', // INSERT, UPDATE, DELETE
+          event: '*',
           schema: 'public',
           table: 'campaign_contacts',
           filter: `campaign_run_id=eq.${activeRun.id}`,
         },
-        (payload) => {
-          console.log('Real-time update:', payload);
-          fetchCallLogs(activeRun.id); // re-fetch on any change
+        () => {
+          fetchCallLogs(activeRun.id, runs);
         }
       )
       .subscribe();
 
-    // Cleanup on drawer close or run change
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [activeRun?.id]);
+  }, [activeRun?.id, runs]);
 
   // ── Filtering ─────────────────────────────────────────────────────────────
-  const filtered = runs.filter((r) => {
+  const baseRuns = runs.filter(r => r.parentRunId === null);
+  const filtered = baseRuns.filter((r) => {
     const matchSearch =
       r.campaignName.toLowerCase().includes(search.toLowerCase()) ||
       r.id.toLowerCase().includes(search.toLowerCase());
@@ -272,6 +341,11 @@ export default function CampaignRunsPage() {
   const groupedItems = (() => {
     const groups: Record<string, CampaignRun[]> = {};
     const flatRuns: CampaignRun[] = [];
+
+    const campaignRunCounts: Record<string, number> = {};
+    filtered.forEach(run => {
+      campaignRunCounts[run.campaignId] = (campaignRunCounts[run.campaignId] || 0) + 1;
+    });
 
     filtered.forEach(run => {
       if (run.scheduleType === 'recurring') {
@@ -374,7 +448,7 @@ export default function CampaignRunsPage() {
       const { data, error } = await supabase
         .from("call_logs")
         .select("*, contacts(first_name, last_name), campaigns(name)")
-        .eq("campaign_run_id", activeRun.id)
+        .eq("campaign_run_id", contactRow.campaignRunId)
         .eq("contact_id", contactRow.contactId)
         .order("created_at", { ascending: false })
         .limit(1)
@@ -406,11 +480,43 @@ export default function CampaignRunsPage() {
   }
 
   function openDrawer(run: CampaignRun) {
-    setActiveRun(run);
+    // Find the latest run in this run's chain
+    const chainIds = getChainRunIds(run.id, runs);
+    const chainRuns = runs.filter(r => chainIds.includes(r.id));
+    const latestRun = chainRuns.sort((a, b) =>
+      b.attemptNumber - a.attemptNumber)[0] ?? run;
+
+    setActiveRun(latestRun); // ← always set to latest
     setDrawerSearch("");
     setDrawerStatusFilter("all");
     setDrawerPage(1);
+    setRetrySuccessRunId(null);
     setDrawerOpen(true);
+  }
+
+  async function handleRetryConfirmed() {
+    if (!confirmRetryRun) return;
+    setRetryLoading(true);
+    try {
+      const { data, error } = await supabase.rpc('f_create_retry_run', {
+        p_campaign_run_id: confirmRetryRun.id
+      });
+      if (error) throw error;
+
+      const latestRuns = await fetchRuns();
+      setRetrySuccessRunId(data);
+      setConfirmRetryRun(null);
+
+      // Open the new run
+      const newRun = latestRuns.find(r => r.id === data);
+      if (newRun) {
+        openDrawer(newRun);
+      }
+    } catch (e: any) {
+      console.error("Retry failed:", e);
+    } finally {
+      setRetryLoading(false);
+    }
   }
 
 
@@ -429,7 +535,19 @@ export default function CampaignRunsPage() {
       key: "status",
       header: "Status",
       render: (item: CampaignContactRow) => (
-        <StatusBadge variant={mapContactStatus(item.status)}>{contactStatusLabel(item.status)}</StatusBadge>
+        <div className="flex flex-col">
+          <StatusBadge variant={mapContactStatus(item.status)}>{contactStatusLabel(item.status)}</StatusBadge>
+          {item.status.toUpperCase() === 'COMPLETED' && (item.attemptReached ?? 0) > 1 && (
+            <span className="text-[10px] text-muted-foreground mt-0.5 ml-1 italic">
+              via retry {item.attemptReached}
+            </span>
+          )}
+          {item.status.toUpperCase() !== 'COMPLETED' && item.totalAttempts > 1 && (
+            <span className="text-[10px] text-muted-foreground mt-0.5 ml-1 italic">
+              tried {item.totalAttempts}x
+            </span>
+          )}
+        </div>
       ),
     },
     {
@@ -552,8 +670,20 @@ export default function CampaignRunsPage() {
                   <tbody className="divide-y divide-border">
                     {displayRows.map((row) => {
                       if (row.type === 'flat' || row.type === 'child') {
-                        const item = row.data;
+                        const item = row.data as CampaignRun;
                         const isChild = row.type === 'child';
+
+                        // For flat rows, show the status/date of the latest run in the chain
+                        let displayStatus = item.status;
+                        let displayStartedAt = item.startedAt;
+
+                        if (row.type === 'flat') {
+                          const chainIds = getChainRunIds(item.id, runs);
+                          const latestRun = runs.filter(r => chainIds.includes(r.id)).sort((a,b) => b.attemptNumber - a.attemptNumber)[0] || item;
+                          displayStatus = latestRun.status;
+                          displayStartedAt = latestRun.startedAt;
+                        }
+
                         return (
                           <tr
                             key={row.key}
@@ -561,11 +691,19 @@ export default function CampaignRunsPage() {
                             className={cn(
                               "group transition-colors duration-150 cursor-pointer hover:bg-muted/50",
                               isChild && "bg-muted/10 border-l-2 border-primary/20",
-                              isChild && item.status.toUpperCase() === 'PAUSED' && "opacity-60"
+                              isChild && (item.status.toUpperCase() === 'PAUSED' || item.parentRunId) && "opacity-60"
                             )}
                           >
-                            <td className={cn("px-4 py-3 font-mono text-xs text-muted-foreground", isChild && "pl-8")}>
-                              {isChild ? `#${row.runNumber}` : `${item.id.slice(0, 8)}...`}
+                            <td className={cn("px-4 py-3 font-mono text-xs text-muted-foreground", isChild && "pl-8", isChild && item.parentRunId && "pl-12")}>
+                              {isChild ? (
+                                item.parentRunId ? (
+                                  <span className="opacity-70">↳ Retry {item.attemptNumber}</span>
+                                ) : (
+                                  `#${row.runNumber}`
+                                )
+                              ) : (
+                                `${item.id.slice(0, 8)}...`
+                              )}
                             </td>
                             <td className="px-4 py-3 font-medium">
                               {isChild ? (
@@ -577,7 +715,7 @@ export default function CampaignRunsPage() {
                               )}
                             </td>
                             <td className="px-4 py-3">
-                              <StatusBadge variant={mapRunStatus(item.status)}>{item.status.toLowerCase()}</StatusBadge>
+                              <StatusBadge variant={mapRunStatus(displayStatus)}>{displayStatus.toLowerCase()}</StatusBadge>
                             </td>
                             {isChild && item.status.toUpperCase() === 'PAUSED' ? (
                               <td colSpan={2} className="px-4 py-3 text-muted-foreground italic text-xs">
@@ -585,7 +723,7 @@ export default function CampaignRunsPage() {
                               </td>
                             ) : (
                               <>
-                                <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{formatDateTime(item.startedAt)}</td>
+                                <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{formatDateTime(displayStartedAt)}</td>
                                 <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{formatDateTime(item.completedAt)}</td>
                               </>
                             )}
@@ -658,7 +796,27 @@ export default function CampaignRunsPage() {
                 <SheetHeader className="pb-4 shrink-0">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <SheetTitle className="text-base font-mono">{activeRun.id.slice(0, 8)}...</SheetTitle>
+                      <div className="flex items-center">
+                        <SheetTitle className="text-base font-mono">{activeRun.id.slice(0, 8)}...</SheetTitle>
+                        {(() => {
+                          let rootId = activeRun.id;
+                          let current = runs.find(r => r.id === rootId);
+                          while (current?.parentRunId) {
+                            rootId = current.parentRunId;
+                            current = runs.find(r => r.id === rootId);
+                          }
+                          const chainIds = getChainRunIds(rootId, runs);
+                          return chainIds.length > 1 ? (
+                            <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded ml-2 text-muted-foreground whitespace-nowrap">
+                              {chainIds.length} attempts made
+                            </span>
+                          ) : (
+                            <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded ml-2 text-muted-foreground whitespace-nowrap">
+                              Attempt 1 of 3
+                            </span>
+                          );
+                        })()}
+                      </div>
                       <SheetDescription className="mt-0.5 text-sm font-medium text-foreground">
                         {activeRun.campaignName}
                       </SheetDescription>
@@ -672,12 +830,26 @@ export default function CampaignRunsPage() {
                 <Separator className="shrink-0" />
 
                 {/* Stats Grid */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 py-4 shrink-0">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 py-4 shrink-0">
                   {[
-                    { label: "Total Contacts", value: activeRun.totalContacts, icon: Phone, color: "text-foreground" },
-                    { label: "Successful", value: activeRun.callsCompleted, icon: CheckCircle, color: "text-accent" },
-                    { label: "Failed", value: activeRun.callsFailed, icon: XCircle, color: "text-destructive" },
-                    { label: "Pending", value: activeRun.callsPending, icon: Clock, color: "text-info" },
+                    {
+                      label: "Total Contacts",
+                      value: callLogs.length || activeRun.totalContacts,
+                      icon: Phone,
+                      color: "text-foreground"
+                    },
+                    {
+                      label: "Connected",
+                      value: callLogs.filter(l => l.status === 'COMPLETED').length,
+                      icon: CheckCircle,
+                      color: "text-accent"
+                    },
+                    {
+                      label: "Not Reached",
+                      value: callLogs.filter(l => l.status !== 'COMPLETED').length,
+                      icon: XCircle,
+                      color: "text-destructive"
+                    },
                   ].map((stat) => (
                     <div key={stat.label} className="rounded-lg border border-border bg-muted/40 p-3">
                       <div className="flex items-center gap-1.5 mb-1">
@@ -700,6 +872,62 @@ export default function CampaignRunsPage() {
 
                 <Separator className="my-4 shrink-0" />
 
+                {/* Retry Run logic */}
+                {(() => {
+                  let rootId = activeRun.id;
+                  let curr = runs.find(r => r.id === rootId);
+                  while (curr?.parentRunId) {
+                    rootId = curr.parentRunId;
+                    curr = runs.find(r => r.id === rootId);
+                  }
+                  const chainIds = getChainRunIds(rootId, runs);
+                  const latestRunInChain = runs.filter(r => chainIds.includes(r.id)).sort((a, b) => b.attemptNumber - a.attemptNumber)[0];
+
+                  const unreachedCount = callLogs.filter(l => l.status !== 'COMPLETED').length;
+                  const retryAlreadyExists = runs.some(r => r.parentRunId === latestRunInChain?.id);
+                  const canRetry = (latestRunInChain?.attemptNumber ?? 1) < 3;
+                  const hasProgress = latestRunInChain?.status === 'COMPLETED' || callLogs.some(l => l.status === 'COMPLETED');
+
+                  if (canRetry && unreachedCount > 0 && !retryAlreadyExists && hasProgress) {
+                    return (
+                      <div className="pb-4">
+                        <Button
+                          variant="outline"
+                          className="w-full border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-400 gap-2"
+                          onClick={() => setConfirmRetryRun(latestRunInChain)}
+                        >
+                          <RefreshCw className="h-4 w-4" />
+                          Retry Unreached Calls ({unreachedCount})
+                        </Button>
+                      </div>
+                    );
+                  }
+
+                  if (retryAlreadyExists && latestRunInChain?.status === 'RUNNING') {
+                    return (
+                      <div className="pb-4 text-center">
+                        <p className="text-sm text-muted-foreground italic">
+                          Retry {latestRunInChain.attemptNumber} of 3 in progress...
+                        </p>
+                      </div>
+                    );
+                  }
+
+                  if (!canRetry && unreachedCount > 0) {
+                    return (
+                      <div className="pb-4 text-center">
+                        <p className="text-sm text-destructive font-medium italic">
+                          {unreachedCount} contact(s) could not be reached after 3 attempts
+                        </p>
+                      </div>
+                    );
+                  }
+
+                  return null;
+                })()}
+
+                <Separator className="my-4 shrink-0" />
+
                 {/* Contact Execution Log */}
                 <div className="space-y-3 flex-1 min-h-0">
                   <div className="flex items-center justify-between">
@@ -708,7 +936,7 @@ export default function CampaignRunsPage() {
                       variant="ghost"
                       size="icon"
                       className="h-8 w-8 text-muted-foreground hover:text-primary"
-                      onClick={() => activeRun?.id && fetchCallLogs(activeRun.id)}
+                      onClick={() => activeRun?.id && fetchCallLogs(activeRun.id, runs)}
                       disabled={logsLoading}
                       title="Refresh Log"
                     >
@@ -796,6 +1024,26 @@ export default function CampaignRunsPage() {
         open={callLogDrawerOpen}
         onClose={() => setCallLogDrawerOpen(false)}
       />
+
+      <Dialog open={!!confirmRetryRun} onOpenChange={(open) => !open && setConfirmRetryRun(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Retry Unreached Calls</DialogTitle>
+            <DialogDescription>
+              A new run will be created for {callLogs.filter(l => l.status !== 'COMPLETED').length} contacts who were not successfully reached. This will be attempt {confirmRetryRun ? confirmRetryRun.attemptNumber + 1 : 0} of 3.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmRetryRun(null)} disabled={retryLoading}>
+              Cancel
+            </Button>
+            <Button onClick={handleRetryConfirmed} disabled={retryLoading} className="bg-amber-600 hover:bg-amber-700 text-white gap-2">
+              {retryLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+              Confirm Retry
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

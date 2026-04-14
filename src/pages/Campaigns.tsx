@@ -893,12 +893,13 @@ function CreateCampaignModal({ open, onClose, onCreate, preselectedGroup }: Crea
 // ── Campaign Detail Drawer (tabbed) ───────────────────────────────────────────
 
 function CampaignDetailDrawer({
-  campaign: listCampaign, open, onClose, onRefresh,
+  campaign: listCampaign, open, onClose, onRefresh, highlightLaunch = false,
 }: {
   campaign: Campaign | null;
   open: boolean;
   onClose: () => void;
   onRefresh: () => void;
+  highlightLaunch?: boolean;
 }) {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -922,6 +923,17 @@ function CampaignDetailDrawer({
   const [reviewContacts, setReviewContacts] = useState<any[]>([]);
   const [reviewLoading, setReviewLoading] = useState(false);
   const [genericConfirmLoading, setGenericConfirmLoading] = useState(false);
+
+  const launchRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (open && highlightLaunch && launchRef.current) {
+      const timer = setTimeout(() => {
+        launchRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 400);
+      return () => clearTimeout(timer);
+    }
+  }, [open, highlightLaunch]);
 
   // ── Reset on drawer close ───────────────────────────────────────────────────
   useEffect(() => {
@@ -1213,7 +1225,13 @@ function CampaignDetailDrawer({
             <Separator />
 
             {/* Launch Run section */}
-            <div className="py-4 space-y-3">
+            <div 
+              ref={launchRef}
+              className={cn(
+                "py-4 space-y-3 transition-all duration-500",
+                highlightLaunch && "ring-2 ring-emerald-500/50 bg-emerald-500/5 rounded-xl p-4 shadow-lg shadow-emerald-500/10"
+              )}
+            >
               <h3 className="text-sm font-semibold flex items-center gap-2">
                 <Rocket className="h-4 w-4 text-muted-foreground" />
                 Launch Campaign Run
@@ -1991,6 +2009,7 @@ export default function CampaignsPage() {
   const [editTarget, setEditTarget] = useState<Campaign | null>(null);
   const [detailCampaign, setDetailCampaign] = useState<Campaign | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [shouldHighlightLaunch, setShouldHighlightLaunch] = useState(false);
 
   // Generic confirm states
   const [genericConfirmOpen, setGenericConfirmOpen] = useState(false);
@@ -2178,6 +2197,19 @@ export default function CampaignsPage() {
               </Button>
             )
           )}
+          {item.status === 'DRAFT' && (
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="h-7 text-[11px] text-emerald-600 border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700" 
+              onClick={() => {
+                setShouldHighlightLaunch(true);
+                openDetail(item);
+              }}
+            >
+              <Rocket className="h-3.5 w-3.5 mr-1" /> Launch
+            </Button>
+          )}
           <Button variant="ghost" size="icon" className="h-7 w-7" title="View" onClick={() => openDetail(item)}><Eye className="h-3.5 w-3.5" /></Button>
           <Button variant="ghost" size="icon" className="h-7 w-7" title="Edit" onClick={() => openEdit(item)}><Pencil className="h-3.5 w-3.5" /></Button>
         </div>
@@ -2236,8 +2268,12 @@ export default function CampaignsPage() {
       <CampaignDetailDrawer
         campaign={detailCampaign}
         open={detailOpen}
-        onClose={() => setDetailOpen(false)}
+        onClose={() => {
+          setDetailOpen(false);
+          setShouldHighlightLaunch(false);
+        }}
         onRefresh={fetchCampaigns}
+        highlightLaunch={shouldHighlightLaunch}
       />
 
       <GenericConfirmDialog
