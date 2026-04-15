@@ -15,12 +15,11 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
+
 import {
-  Plus, Search, Megaphone, Eye, Pencil, Copy, Trash2, Users,
-  ChevronLeft, ChevronRight, CheckCircle2, Clock, PlayCircle,
+  Plus, Search, Megaphone, Eye, Pencil, Trash2, Users,
+  ChevronLeft, ChevronRight, CheckCircle2, Clock, PlayCircle, PauseCircle,
   FileEdit, X, Target, Rocket, AlertCircle, Database, ListPlus, ExternalLink,
-  Lock,
 } from "lucide-react";
 import { useState, useEffect, useRef, useCallback, memo, Fragment } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -67,7 +66,7 @@ const statusMeta: Record<
   { variant: "neutral" | "warning" | "info" | "success"; icon: React.ElementType; label: string }
 > = {
   DRAFT: { variant: "neutral", icon: FileEdit, label: "Draft" },
-  LOCKED: { variant: "warning", icon: Lock, label: "Locked" },
+  LOCKED: { variant: "success", icon: Rocket, label: "Launched" },
   SCHEDULED: { variant: "info", icon: Clock, label: "Scheduled" },
 };
 
@@ -205,9 +204,9 @@ const TargetingPanel = memo(({
               <Button variant="outline" size="sm" className="h-7 text-[10px] px-2 font-bold uppercase tracking-tight" onClick={onSelectAll}>Select All</Button>
               <Button variant="outline" size="sm" className="h-7 text-[10px] px-2 font-bold uppercase tracking-tight" onClick={onClearAll}>Clear All</Button>
             </div>
-            <div className="flex items-center gap-2 border rounded-md px-2 py-0.5 bg-background">
+            <div className="flex items-center gap-2 border rounded-md px-2 py-0.5 bg-background cursor-pointer hover:bg-muted/50 transition-colors">
               <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-tight">Selected Only</span>
-              <Switch checked={showSelectedOnly} onCheckedChange={setShowSelectedOnly} className="h-4 w-7 scale-[0.7]" />
+              <Checkbox checked={showSelectedOnly} onCheckedChange={(v) => setShowSelectedOnly(!!v)} className="h-3.5 w-3.5" />
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -314,6 +313,8 @@ function CreateCampaignModal({ open, onClose, onCreate, preselectedGroup }: Crea
   const [groupMembers, setGroupMembers] = useState<Record<string, Set<string>>>({});
   const [loadingStep2, setLoadingStep2] = useState(false);
   const [createLoading, setCreateLoading] = useState(false);
+  const [launchLoading, setLaunchLoading] = useState(false);
+  const [createdCampaignId, setCreatedCampaignId] = useState<string | null>(null);
   const createRef = useRef(false);
 
   // Schedule state
@@ -350,6 +351,7 @@ function CreateCampaignModal({ open, onClose, onCreate, preselectedGroup }: Crea
       setCallStartTime("09:00"); setCallEndTime("18:00");
       setDaysOfWeek(['MON', 'TUE', 'WED', 'THU', 'FRI']);
       setStartDate(null); setEndDate(null);
+      setCreatedCampaignId(null); setLaunchLoading(false);
       createRef.current = false;
     }
   }, [open, preselectedGroup]);
@@ -504,12 +506,35 @@ function CreateCampaignModal({ open, onClose, onCreate, preselectedGroup }: Crea
           p_description: f.description, p_field_type: f.fieldType, p_is_required: f.isRequired, p_created_by: user.dbId,
         });
       }
-      onCreate(); onClose();
+      setCreatedCampaignId(String(campaignId));
+      onCreate();
+      setStep(5);
     } catch (err: any) { console.error("handleCreate:", err); createRef.current = false; }
     finally { setCreateLoading(false); }
   }
 
-  const stepTitles = ["Campaign Setup", "Targeting", "Schedule", "Review"];
+  async function handleLaunchNow() {
+    if (!createdCampaignId) return;
+    setLaunchLoading(true);
+    try {
+      const isScheduled = scheduleType === 'run_once' || scheduleType === 'recurring';
+      const scheduledAt = scheduleType === 'run_once' ? new Date(scheduledStartAt!).toISOString() : null;
+      const { error } = await supabase.rpc("f_create_campaign_run", {
+        p_camp_id: createdCampaignId,
+        p_initial_status: isScheduled ? "SCHEDULED" : "RUNNING",
+        p_scheduled_at: scheduledAt,
+      });
+      if (error) throw error;
+      onCreate();
+      onClose();
+    } catch (err: any) {
+      console.error("handleLaunchNow:", err);
+    } finally {
+      setLaunchLoading(false);
+    }
+  }
+
+  const stepTitles = ["Campaign Setup", "Targeting", "Schedule", "Review", "Launch"];
   const canNext1 = name.trim().length > 0 && greeting.trim().length > 0 && instructions.trim().length > 0;
   const canNext2 = allSelectedContactIds.size > 0;
   const canNext3 =
@@ -525,7 +550,7 @@ function CreateCampaignModal({ open, onClose, onCreate, preselectedGroup }: Crea
       )}>
         <DialogHeader>
           <DialogTitle>Create Campaign</DialogTitle>
-          <DialogDescription>Set up your campaign in 4 steps.</DialogDescription>
+          <DialogDescription>Set up your campaign in 5 steps.</DialogDescription>
         </DialogHeader>
 
         {/* Step indicator */}
@@ -783,10 +808,63 @@ function CreateCampaignModal({ open, onClose, onCreate, preselectedGroup }: Crea
           </div>
         )}
 
+        {step === 5 && (
+          <div className="space-y-4 py-2 flex-1 overflow-y-auto">
+            {/* Success message */}
+            <div className="flex items-center gap-3 p-3 rounded-lg border border-accent/30 bg-accent/10">
+              <CheckCircle2 className="h-5 w-5 text-accent shrink-0" />
+              <div>
+                <p className="text-sm font-semibold text-accent">Campaign created successfully!</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Your campaign is saved as a draft. Choose what to do next.</p>
+              </div>
+            </div>
+
+            {/* Launch Now option */}
+            <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 space-y-3">
+              <div className="flex items-start gap-3">
+                <Rocket className="h-5 w-5 text-primary shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold">Launch Now</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Start the campaign immediately. Calls will be placed to all
+                    <strong> {allSelectedContactIds.size} contacts</strong> based on your schedule.
+                    <span className="block mt-1 text-yellow-600 dark:text-yellow-400 font-medium">
+                      ⚠️ Once launched the campaign cannot be edited.
+                    </span>
+                  </p>
+                </div>
+              </div>
+              <Button className="w-full" onClick={handleLaunchNow} disabled={launchLoading}>
+                <Rocket className="h-4 w-4 mr-2" />
+                {launchLoading ? "Launching..." : "Launch Campaign Now 🚀"}
+              </Button>
+            </div>
+
+            {/* Launch Later option */}
+            <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-3">
+              <div className="flex items-start gap-3">
+                <Clock className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold">Launch Later</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Your campaign is safely saved as a draft. You can review, edit contacts or fields,
+                    and launch it anytime from the Campaigns page.
+                  </p>
+                </div>
+              </div>
+              <Button variant="outline" className="w-full" onClick={() => { onCreate(); onClose(); }}>
+                Save as Draft — I'll Launch Later
+              </Button>
+            </div>
+          </div>
+        )}
+
         <DialogFooter className="flex items-center justify-between sm:justify-between gap-2">
-          <Button variant="outline" onClick={() => (step > 1 ? setStep(step - 1) : onClose())}>
-            {step > 1 ? <><ChevronLeft className="h-4 w-4 mr-1" /> Back</> : "Cancel"}
-          </Button>
+          {step < 5 && (
+            <Button variant="outline" onClick={() => (step > 1 ? setStep(step - 1) : onClose())}>
+              {step > 1 ? <><ChevronLeft className="h-4 w-4 mr-1" /> Back</> : "Cancel"}
+            </Button>
+          )}
           {step < 4 ? (
             <button
               onClick={() => setStep(step + 1)}
@@ -801,11 +879,11 @@ function CreateCampaignModal({ open, onClose, onCreate, preselectedGroup }: Crea
             >
               Next <ChevronRight className="h-4 w-4 ml-1" />
             </button>
-          ) : (
+          ) : step === 4 ? (
             <Button onClick={handleCreate} disabled={createLoading}>
-              <Megaphone className="h-4 w-4 mr-1" /> {createLoading ? "Creating..." : "Create Campaign"}
+              <CheckCircle2 className="h-4 w-4 mr-1" /> {createLoading ? "Creating..." : "Save & Continue"}
             </Button>
-          )}
+          ) : null}
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -815,12 +893,13 @@ function CreateCampaignModal({ open, onClose, onCreate, preselectedGroup }: Crea
 // ── Campaign Detail Drawer (tabbed) ───────────────────────────────────────────
 
 function CampaignDetailDrawer({
-  campaign: listCampaign, open, onClose, onRefresh,
+  campaign: listCampaign, open, onClose, onRefresh, highlightLaunch = false,
 }: {
   campaign: Campaign | null;
   open: boolean;
   onClose: () => void;
   onRefresh: () => void;
+  highlightLaunch?: boolean;
 }) {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -835,6 +914,7 @@ function CampaignDetailDrawer({
 
   // Launch run state
   const [activeRun, setActiveRun] = useState<any>(null);
+  const [latestRun, setLatestRun] = useState<any>(null);
   const [launchLoading, setLaunchLoading] = useState(false);
   const [launchError, setLaunchError] = useState<string | null>(null);
   const [launchSuccess, setLaunchSuccess] = useState<any>(null);
@@ -843,13 +923,26 @@ function CampaignDetailDrawer({
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [reviewContacts, setReviewContacts] = useState<any[]>([]);
   const [reviewLoading, setReviewLoading] = useState(false);
+  const [genericConfirmLoading, setGenericConfirmLoading] = useState(false);
+
+  const launchRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (open && highlightLaunch && launchRef.current) {
+      const timer = setTimeout(() => {
+        launchRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 400);
+      return () => clearTimeout(timer);
+    }
+  }, [open, highlightLaunch]);
 
   // ── Reset on drawer close ───────────────────────────────────────────────────
   useEffect(() => {
     if (!open) {
       setFullCampaign(null); setFields([]);
       setShowReviewModal(false); setReviewContacts([]); setReviewLoading(false);
-      setActiveRun(null); setLaunchSuccess(null); setLaunchError(null);
+      setActiveRun(null); setLatestRun(null); setLaunchSuccess(null); setLaunchError(null);
+      setGenericConfirmLoading(false);
     }
   }, [open]);
 
@@ -886,6 +979,17 @@ function CampaignDetailDrawer({
       const { data, error } = await supabase.rpc("f_get_active_campaign_run", { p_camp_id: listCampaign.id });
       if (!error && data) setActiveRun(Array.isArray(data) ? data[0] : data);
       else setActiveRun(null);
+
+      // Also fetch the latest run for this campaign
+      const { data: latestData } = await supabase
+        .from('campaign_runs')
+        .select('id, status, started_at, attempt_number')
+        .eq('campaign_id', listCampaign.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (latestData) setLatestRun(latestData);
     } catch (err) { console.error("fetchActiveRun error:", err); }
   }
 
@@ -938,7 +1042,7 @@ function CampaignDetailDrawer({
   // ── Derived values ──────────────────────────────────────────────────────────
   if (!listCampaign) return null;
   const status = listCampaign.status || "DRAFT";
-  const meta = statusMeta[status] || statusMeta.DRAFT;
+  const meta = statusMeta[status] || statusMeta.LOCKED;
   const isDraft = status === "DRAFT";
   const hasContacts = listCampaign.totalRecipients > 0;
   const hasFields = fields.length > 0;
@@ -1050,6 +1154,48 @@ function CampaignDetailDrawer({
               </div>
             </div>
 
+            {fullCampaign?.schedule_type === 'recurring' && fullCampaign?.status === 'LOCKED' && !loading && (
+              <div className="mb-4">
+                {fullCampaign.is_active ? (
+                  <Button
+                    variant="outline"
+                    className="w-full text-yellow-600 border-yellow-300 hover:bg-yellow-50 hover:text-yellow-700 hover:border-yellow-400"
+                    onClick={async () => {
+                      setGenericConfirmLoading(true);
+                      try {
+                        await supabase.rpc('f_deactivate_campaign', { p_id: fullCampaign.id });
+                        onRefresh();
+                        onClose();
+                      } catch (err) { console.error(err); }
+                      finally { setGenericConfirmLoading(false); }
+                    }}
+                    disabled={genericConfirmLoading}
+                  >
+                    <PauseCircle className="h-4 w-4 mr-2" />
+                    {genericConfirmLoading ? "Pausing..." : "Pause Campaign"}
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    className="w-full text-green-600 border-green-300 hover:bg-green-50 hover:text-green-700 hover:border-green-400"
+                    onClick={async () => {
+                      setGenericConfirmLoading(true);
+                      try {
+                        await supabase.rpc('f_reactivate_campaign', { p_id: fullCampaign.id });
+                        onRefresh();
+                        onClose();
+                      } catch (err) { console.error(err); }
+                      finally { setGenericConfirmLoading(false); }
+                    }}
+                    disabled={genericConfirmLoading}
+                  >
+                    <PlayCircle className="h-4 w-4 mr-2" />
+                    {genericConfirmLoading ? "Resuming..." : "Resume Campaign"}
+                  </Button>
+                )}
+              </div>
+            )}
+
             <Separator />
 
             {/* Greeting + Instructions */}
@@ -1091,7 +1237,13 @@ function CampaignDetailDrawer({
             <Separator />
 
             {/* Launch Run section */}
-            <div className="py-4 space-y-3">
+            <div
+              ref={launchRef}
+              className={cn(
+                "py-4 space-y-3 transition-all duration-500",
+                highlightLaunch && "ring-2 ring-emerald-500/50 bg-emerald-500/5 rounded-xl p-4 shadow-lg shadow-emerald-500/10"
+              )}
+            >
               <h3 className="text-sm font-semibold flex items-center gap-2">
                 <Rocket className="h-4 w-4 text-muted-foreground" />
                 Launch Campaign Run
@@ -1119,7 +1271,33 @@ function CampaignDetailDrawer({
                     <p className="text-sm font-semibold">Campaign is currently running</p>
                   </div>
                   <p className="text-xs text-muted-foreground font-mono">Run ID: {activeRun.id?.slice(0, 8)}...</p>
-                  <Button variant="outline" size="sm" className="w-full h-8 text-xs" onClick={() => { onClose(); navigate("/campaign-runs"); }}>
+                </div>
+              )}
+
+              {/* Latest Run (if not active) */}
+              {!launchSuccess && !activeRun && latestRun && !isDraft && (
+                <div className="rounded-lg border border-border bg-muted/40 p-3 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
+                    <p className="text-sm font-semibold">Latest Run</p>
+                    <span className="text-xs text-muted-foreground capitalize">
+                      {latestRun.status?.toLowerCase()}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground font-mono">
+                    Run ID: {latestRun.id?.slice(0, 8)}...
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full h-8 text-xs"
+                    onClick={() => {
+                      onClose();
+                      navigate("/campaign-runs", {
+                        state: { openRunId: latestRun.id }
+                      });
+                    }}
+                  >
                     <ExternalLink className="h-3.5 w-3.5 mr-1.5" /> View Run Details
                   </Button>
                 </div>
@@ -1314,7 +1492,7 @@ const EditCampaignModal = memo(({ open, onClose, onUpdate, campaign }: EditCampa
   const [fError, setFError] = useState<string | null>(null);
 
   const isDraft = campaign?.status === "DRAFT";
-  const isLocked = campaign?.status === "LOCKED";
+  const isLocked = campaign?.status !== "DRAFT";
 
   useEffect(() => {
     if (campaign && open) {
@@ -1812,26 +1990,37 @@ const EditCampaignModal = memo(({ open, onClose, onUpdate, campaign }: EditCampa
   );
 });
 
-// ── Status Confirm Dialog ─────────────────────────────────────────────────────
 
-function StatusConfirmDialog({ open, onClose, onConfirm, loading, details }: {
-  open: boolean; onClose: () => void;
-  onConfirm: (id: string, action: "deactivate" | "reactivate") => void;
-  loading: boolean;
-  details: { title: string; description: string; actionType: "deactivate" | "reactivate"; campaignId?: string } | null;
+
+// ── Shared Generic Confirm Dialog ───────────────────────────────────────────
+
+function GenericConfirmDialog({ open, onClose, onConfirm, loading, title, description, confirmLabel, confirmVariant }: {
+  open: boolean; onClose: () => void; onConfirm: () => void;
+  loading: boolean; title: string; description: string; confirmLabel: string;
+  confirmVariant: "default" | "destructive" | "amber" | "green";
 }) {
+  const variantStyles = {
+    default: "bg-primary text-primary-foreground hover:bg-primary/90",
+    destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
+    amber: "bg-yellow-600 text-white hover:bg-yellow-700",
+    green: "bg-green-600 text-white hover:bg-green-700",
+  };
+
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{details?.title}</DialogTitle>
-          <DialogDescription>{details?.description}</DialogDescription>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={loading}>Cancel</Button>
-          <Button variant={details?.actionType === "deactivate" ? "destructive" : "default"}
-            onClick={() => details?.campaignId && onConfirm(details.campaignId, details.actionType)} disabled={loading}>
-            {loading ? "Processing..." : details?.actionType === "deactivate" ? "Deactivate" : "Reactivate"}
+          <Button
+            className={variantStyles[confirmVariant]}
+            onClick={onConfirm}
+            disabled={loading}
+          >
+            {loading ? "Processing..." : confirmLabel}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1858,12 +2047,17 @@ export default function CampaignsPage() {
   const [editTarget, setEditTarget] = useState<Campaign | null>(null);
   const [detailCampaign, setDetailCampaign] = useState<Campaign | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [shouldHighlightLaunch, setShouldHighlightLaunch] = useState(false);
 
-  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
-  const [confirmDetails, setConfirmDetails] = useState<{
-    title: string; description: string; actionType: "deactivate" | "reactivate"; campaignId?: string; campaignName?: string;
+  // Generic confirm states
+  const [genericConfirmOpen, setGenericConfirmOpen] = useState(false);
+  const [genericConfirmData, setGenericConfirmData] = useState<{
+    title: string; description: string; confirmLabel: string;
+    confirmVariant: "amber" | "green"; onConfirm: () => void;
   } | null>(null);
-  const [statusActionLoading, setStatusActionLoading] = useState(false);
+  const [genericConfirmLoading, setGenericConfirmLoading] = useState(false);
+
+
 
   const fetchCampaigns = useCallback(async () => {
     if (!user?.org_id) return;
@@ -1899,22 +2093,7 @@ export default function CampaignsPage() {
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  async function handleToggleStatus(campaignId: string, action: "deactivate" | "reactivate") {
-    setStatusActionLoading(true);
-    try {
-      const { error } = await supabase.rpc(
-        action === "deactivate" ? "f_deactivate_campaign" : "f_reactivate_campaign",
-        { p_id: campaignId }
-      );
-      if (error) throw error;
-      await fetchCampaigns();
-    } catch (err) { console.error("handleToggleStatus:", err); }
-    finally { setStatusActionLoading(false); setConfirmDialogOpen(false); setConfirmDetails(null); }
-  }
 
-  function handleDuplicate(c: Campaign) {
-    setCampaigns(prev => [{ ...c, id: String(Date.now()), name: `${c.name} (Copy)`, status: "DRAFT", createdAt: new Date().toISOString().slice(0, 10) }, ...prev]);
-  }
 
   async function openEdit(c: Campaign) {
     try {
@@ -1959,7 +2138,7 @@ export default function CampaignsPage() {
       key: "status", header: "Status",
       render: (item: Campaign) => {
         const m = statusMeta[item.status || "DRAFT"];
-        if (!m) return <StatusBadge variant="neutral"><FileEdit className="h-3 w-3 mr-1 inline" />Unknown</StatusBadge>;
+        if (!m) return <StatusBadge variant="success"><Rocket className="h-3 w-3 mr-1 inline" />Launched</StatusBadge>;
         return <StatusBadge variant={m.variant}><m.icon className="h-3 w-3 mr-1 inline" />{m.label}</StatusBadge>;
       },
     },
@@ -2001,20 +2180,76 @@ export default function CampaignsPage() {
       key: "actions", header: "",
       render: (item: Campaign) => (
         <div className="flex items-center gap-1 justify-end" onClick={(e) => e.stopPropagation()}>
-          <div className="flex items-center gap-3 mr-2">
-            <Switch className="data-[state=checked]:bg-green-600" checked={item.isActive}
-              onCheckedChange={() => {
-                setConfirmDetails(item.isActive
-                  ? { title: "Deactivate Campaign", description: `Are you sure you want to deactivate "${item.name}"?`, actionType: "deactivate", campaignId: item.id }
-                  : { title: "Reactivate Campaign", description: `Are you sure you want to reactivate "${item.name}"?`, actionType: "reactivate", campaignId: item.id }
-                );
-                setConfirmDialogOpen(true);
+          {item.schedule_type === 'recurring' && item.status === 'LOCKED' && (
+            item.isActive ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-[11px] text-yellow-600 border-yellow-300 hover:bg-yellow-50 hover:text-yellow-700"
+                onClick={() => {
+                  setGenericConfirmData({
+                    title: "Pause Campaign",
+                    description: "Future scheduled runs for this campaign will be suspended. You can resume anytime.",
+                    confirmLabel: "Pause Campaign",
+                    confirmVariant: "amber",
+                    onConfirm: async () => {
+                      setGenericConfirmLoading(true);
+                      try {
+                        await supabase.rpc('f_deactivate_campaign', { p_id: item.id });
+                        await fetchCampaigns();
+                        setGenericConfirmOpen(false);
+                      } catch (err) { console.error(err); }
+                      finally { setGenericConfirmLoading(false); }
+                    }
+                  });
+                  setGenericConfirmOpen(true);
+                }}
+              >
+                <PauseCircle className="h-3.5 w-3.5 mr-1" /> Pause
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-[11px] text-green-600 border-green-300 hover:bg-green-50 hover:text-green-700"
+                onClick={() => {
+                  setGenericConfirmData({
+                    title: "Resume Campaign",
+                    description: "The next run will be rescheduled from today based on your active days.",
+                    confirmLabel: "Resume Campaign",
+                    confirmVariant: "green",
+                    onConfirm: async () => {
+                      setGenericConfirmLoading(true);
+                      try {
+                        await supabase.rpc('f_reactivate_campaign', { p_id: item.id });
+                        await fetchCampaigns();
+                        setGenericConfirmOpen(false);
+                      } catch (err) { console.error(err); }
+                      finally { setGenericConfirmLoading(false); }
+                    }
+                  });
+                  setGenericConfirmOpen(true);
+                }}
+              >
+                <PlayCircle className="h-3.5 w-3.5 mr-1" /> Resume
+              </Button>
+            )
+          )}
+          {item.status === 'DRAFT' && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-[11px] text-emerald-600 border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700"
+              onClick={() => {
+                setShouldHighlightLaunch(true);
+                openDetail(item);
               }}
-            />
-          </div>
+            >
+              <Rocket className="h-3.5 w-3.5 mr-1" /> Launch
+            </Button>
+          )}
           <Button variant="ghost" size="icon" className="h-7 w-7" title="View" onClick={() => openDetail(item)}><Eye className="h-3.5 w-3.5" /></Button>
           <Button variant="ghost" size="icon" className="h-7 w-7" title="Edit" onClick={() => openEdit(item)}><Pencil className="h-3.5 w-3.5" /></Button>
-          <Button variant="ghost" size="icon" className="h-7 w-7" title="Duplicate" onClick={() => handleDuplicate(item)}><Copy className="h-3.5 w-3.5" /></Button>
         </div>
       ),
     },
@@ -2066,13 +2301,24 @@ export default function CampaignsPage() {
         campaign={editTarget}
       />
 
-      <StatusConfirmDialog open={confirmDialogOpen} onClose={() => setConfirmDialogOpen(false)} onConfirm={handleToggleStatus} loading={statusActionLoading} details={confirmDetails} />
+
 
       <CampaignDetailDrawer
         campaign={detailCampaign}
         open={detailOpen}
-        onClose={() => setDetailOpen(false)}
+        onClose={() => {
+          setDetailOpen(false);
+          setShouldHighlightLaunch(false);
+        }}
         onRefresh={fetchCampaigns}
+        highlightLaunch={shouldHighlightLaunch}
+      />
+
+      <GenericConfirmDialog
+        open={genericConfirmOpen}
+        onClose={() => setGenericConfirmOpen(false)}
+        loading={genericConfirmLoading}
+        {...(genericConfirmData || { title: "", description: "", confirmLabel: "", confirmVariant: "default", onConfirm: () => { } })}
       />
     </DashboardLayout>
   );

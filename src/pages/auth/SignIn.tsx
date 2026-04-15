@@ -10,7 +10,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 
 export default function SignInPage() {
-  const { login } = useAuth();
+  const { login, loginWithOAuth } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const from = (location.state as { from?: { pathname: string } })?.from?.pathname || "/";
@@ -159,6 +159,24 @@ export default function SignInPage() {
               )}
             </Button>
           </form>
+
+          <div className="relative my-4">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-border" />
+            </div>
+            <div className="relative flex justify-center text-xs text-muted-foreground">
+              <span className="bg-card px-2">or continue with</span>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <Button variant="outline" type="button" onClick={() => loginWithOAuth('google')}>
+              Continue with Google
+            </Button>
+            <Button variant="outline" type="button" onClick={() => loginWithOAuth('azure')}>
+              Continue with Microsoft
+            </Button>
+          </div>
 
           <p className="mt-6 text-center text-sm text-muted-foreground">
             Don't have an account?{" "}

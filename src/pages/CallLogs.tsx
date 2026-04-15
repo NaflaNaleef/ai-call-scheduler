@@ -13,87 +13,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-} from "@/components/ui/sheet";
-import { Separator } from "@/components/ui/separator";
-import { Badge } from "@/components/ui/badge";
-import {
-  PhoneCall, Search, Calendar, Mic, User, Megaphone,
-  Hash, Clock, Loader2, ChevronDown, ChevronUp, ExternalLink
-} from "lucide-react";
+import { PhoneCall, Search, Loader2, RefreshCw } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/AuthContext";
-
-// ── Types ────────────────────────────────────────────────────────────────────
-
-interface CallLog {
-  id: string;
-  campaignId: string;
-  campaignName: string;
-  campaignRunId: string | null;
-  contactId: string | null;
-  contactName: string;
-  phone: string;
-  status: string;
-  attemptNumber: number;
-  callDuration: number | null;
-  collectedData: Record<string, any> | null;
-  transcriptText: string | null;
-  transcriptJson: Array<{ id: number; text: string; user: string; created_at: string }> | null;
-  recordingUrl: string | null;
-  voicemailDetected: boolean;
-  createdAt: string;
-}
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-function formatDuration(seconds: number | null): string {
-  if (!seconds || seconds === 0) return "—";
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return `${m}:${s.toString().padStart(2, "0")}`;
-}
-
-function formatDateTime(ts: string | null): string {
-  if (!ts) return "—";
-  return new Date(ts).toLocaleString("en-US", {
-    year: "numeric", month: "2-digit", day: "2-digit",
-    hour: "2-digit", minute: "2-digit", hour12: false,
-  });
-}
-
-function mapStatus(status: string): "success" | "error" | "info" | "neutral" {
-  switch (status?.toUpperCase()) {
-    case "ANSWERED": return "success";
-    case "FAILED":
-    case "NO_ANSWER":
-    case "BUSY":
-    case "VOICEMAIL": return "error";
-    case "PENDING": return "neutral";
-    default: return "info";
-  }
-}
-
-function statusLabel(status: string): string {
-  switch (status?.toUpperCase()) {
-    case "ANSWERED": return "answered";
-    case "FAILED": return "failed";
-    case "NO_ANSWER": return "no answer";
-    case "BUSY": return "busy";
-    case "VOICEMAIL": return "voicemail";
-    case "PENDING": return "pending";
-    default: return status?.toLowerCase() ?? "—";
-  }
-}
+import { cn } from "@/lib/utils";
+import {
+  CallLog, CallLogDrawer,
+  mapStatus, statusLabel, formatDateTime,
+} from "@/components/call-logs/CallLogDrawer";
 
 const PAGE_SIZE = 8;
-
-// ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function CallLogsPage() {
   const { user } = useAuth();
@@ -107,12 +36,9 @@ export default function CallLogsPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [page, setPage] = useState(1);
 
-  // Drawer
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [activeLog, setActiveLog] = useState<CallLog | null>(null);
-  const [transcriptExpanded, setTranscriptExpanded] = useState(false);
 
-  // ── Fetch ─────────────────────────────────────────────────────────────────
   const fetchLogs = useCallback(async () => {
     if (!user?.org_id) return;
     setLoading(true);
@@ -152,10 +78,8 @@ export default function CallLogsPage() {
 
   useEffect(() => { fetchLogs(); }, [fetchLogs]);
 
-  // ── Unique campaign names for filter ──────────────────────────────────────
   const campaignNames = Array.from(new Set(logs.map((l) => l.campaignName))).sort();
 
-  // ── Filtering ─────────────────────────────────────────────────────────────
   const filtered = logs.filter((l) => {
     const matchSearch =
       l.contactName.toLowerCase().includes(search.toLowerCase()) ||
@@ -170,11 +94,9 @@ export default function CallLogsPage() {
 
   function openDrawer(log: CallLog) {
     setActiveLog(log);
-    setTranscriptExpanded(false);
     setDrawerOpen(true);
   }
 
-  // ── Columns ───────────────────────────────────────────────────────────────
   const columns = [
     {
       key: "contact",
@@ -213,7 +135,7 @@ export default function CallLogsPage() {
     {
       key: "callDuration",
       header: "Duration",
-      render: (item: CallLog) => <span>{formatDuration(item.callDuration)}</span>,
+      render: (item: CallLog) => <span>{item.callDuration ? `${Math.floor(item.callDuration/60)}:${String(item.callDuration%60).padStart(2,"0")}` : "—"}</span>,
     },
     {
       key: "createdAt",
@@ -233,7 +155,6 @@ export default function CallLogsPage() {
     },
   ];
 
-  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <DashboardLayout title="Call Logs">
       <div className="space-y-4">
@@ -279,6 +200,17 @@ export default function CallLogsPage() {
               <SelectItem value="PENDING">Pending</SelectItem>
             </SelectContent>
           </Select>
+
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-9 w-9 shrink-0"
+            onClick={fetchLogs}
+            disabled={loading}
+            title="Refresh Logs"
+          >
+            <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
+          </Button>
         </div>
 
         {/* Content */}
@@ -311,203 +243,11 @@ export default function CallLogsPage() {
         )}
       </div>
 
-      {/* ── CALL DETAIL DRAWER ────────────────────────────────────────────── */}
-      <Sheet open={drawerOpen} onOpenChange={setDrawerOpen}>
-        <SheetContent className="w-full sm:max-w-lg overflow-y-auto">
-          {activeLog && (
-            <>
-              <SheetHeader className="pb-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <SheetTitle className="text-base">{activeLog.contactName}</SheetTitle>
-                    <SheetDescription className="text-xs font-mono mt-0.5">
-                      {activeLog.id.slice(0, 8)}...
-                    </SheetDescription>
-                  </div>
-                  <StatusBadge variant={mapStatus(activeLog.status)}>
-                    {statusLabel(activeLog.status)}
-                  </StatusBadge>
-                </div>
-              </SheetHeader>
-
-              <Separator />
-
-              <div className="py-4 space-y-3">
-                {/* Info Card */}
-                <div className="rounded-lg border border-border bg-muted/40 p-4 space-y-3">
-                  <div className="flex items-center gap-2">
-                    <User className="h-4 w-4 text-muted-foreground shrink-0" />
-                    <div>
-                      <p className="text-xs text-muted-foreground">Contact</p>
-                      <p className="text-sm font-medium">{activeLog.contactName}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <PhoneCall className="h-4 w-4 text-muted-foreground shrink-0" />
-                    <div>
-                      <p className="text-xs text-muted-foreground">Phone</p>
-                      <p className="text-sm font-medium">{activeLog.phone}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Megaphone className="h-4 w-4 text-muted-foreground shrink-0" />
-                    <div>
-                      <p className="text-xs text-muted-foreground">Campaign</p>
-                      <p className="text-sm font-medium">{activeLog.campaignName}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Hash className="h-4 w-4 text-muted-foreground shrink-0" />
-                    <div>
-                      <p className="text-xs text-muted-foreground">Run ID</p>
-                      <p className="text-sm font-mono">
-                        {activeLog.campaignRunId ? activeLog.campaignRunId.slice(0, 8) + "..." : "—"}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Call Stats */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-lg border border-border bg-muted/40 p-3">
-                    <p className="text-xs text-muted-foreground mb-1">Attempt</p>
-                    <p className="text-lg font-semibold">#{activeLog.attemptNumber}</p>
-                  </div>
-                  <div className="rounded-lg border border-border bg-muted/40 p-3">
-                    <p className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
-                      <Clock className="h-3 w-3" /> Duration
-                    </p>
-                    <p className="text-lg font-semibold">{formatDuration(activeLog.callDuration)}</p>
-                  </div>
-                </div>
-
-                <div className="rounded-lg border border-border bg-muted/40 p-3">
-                  <p className="text-xs text-muted-foreground mb-1">Timestamp</p>
-                  <p className="text-sm font-medium">{formatDateTime(activeLog.createdAt)}</p>
-                </div>
-
-                {/* Voicemail badge */}
-                {activeLog.voicemailDetected && (
-                  <div className="rounded-lg border border-yellow-200 bg-yellow-50 dark:bg-yellow-950/20 p-3">
-                    <p className="text-xs text-yellow-700 dark:text-yellow-400 font-medium">Voicemail detected</p>
-                  </div>
-                )}
-
-                {/* Collected Data */}
-                {activeLog.collectedData && Object.keys(activeLog.collectedData).length > 0 && (
-                  <div className="rounded-lg border border-border bg-muted/40 p-3 space-y-2">
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Collected Data</p>
-                    {Object.entries(activeLog.collectedData).map(([key, value]) => (
-                      <div key={key} className="flex justify-between items-start gap-2">
-                        <p className="text-xs text-muted-foreground capitalize">{key.replace(/_/g, " ")}</p>
-                        <p className="text-xs font-medium text-right max-w-[60%] break-words">
-                          {value === null ? "—" : String(value)}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <Separator />
-
-              {/* Recording & Transcript */}
-              <div className="py-4 space-y-3">
-                <h3 className="text-sm font-semibold flex items-center gap-2">
-                  <Mic className="h-4 w-4 text-muted-foreground" />
-                  Recording & Transcript
-                </h3>
-
-                {/* Recording */}
-                {activeLog.recordingUrl ? (
-                  <div className="rounded-lg border border-border bg-muted/40 p-3 space-y-2">
-                    <p className="text-xs text-muted-foreground font-medium">Call Recording</p>
-                    <audio controls className="w-full h-8" src={activeLog.recordingUrl}>
-                      Your browser does not support audio playback.
-                    </audio>
-                    <a
-                      href={activeLog.recordingUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-1 text-xs text-primary hover:underline"
-                    >
-                      <ExternalLink className="h-3 w-3" />
-                      Open recording
-                    </a>
-                  </div>
-                ) : (
-                  <div className="rounded-lg border border-dashed border-border p-4 text-center">
-                    <p className="text-xs text-muted-foreground">No recording available</p>
-                  </div>
-                )}
-
-                {/* Transcript */}
-                {activeLog.transcriptJson && activeLog.transcriptJson.length > 0 ? (
-                  <div className="rounded-lg border border-border bg-muted/40 p-3 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs font-medium text-muted-foreground">Transcript</p>
-                      <button
-                        onClick={() => setTranscriptExpanded(!transcriptExpanded)}
-                        className="flex items-center gap-1 text-xs text-primary hover:underline"
-                      >
-                        {transcriptExpanded ? (
-                          <><ChevronUp className="h-3 w-3" /> Collapse</>
-                        ) : (
-                          <><ChevronDown className="h-3 w-3" /> Expand</>
-                        )}
-                      </button>
-                    </div>
-
-                    <div className={`space-y-2 ${transcriptExpanded ? "" : "max-h-48 overflow-hidden"}`}>
-                      {activeLog.transcriptJson
-                        .filter((t) => t.user !== "agent-action")
-                        .map((t) => (
-                          <div
-                            key={t.id}
-                            className={`flex gap-2 ${t.user === "assistant" ? "justify-end" : "justify-start"}`}
-                          >
-                            <div
-                              className={`max-w-[80%] rounded-lg px-3 py-1.5 text-xs ${t.user === "assistant"
-                                  ? "bg-primary text-primary-foreground"
-                                  : "bg-muted text-foreground"
-                                }`}
-                            >
-                              <p className="font-medium mb-0.5 opacity-70 capitalize">{t.user}</p>
-                              <p>{t.text}</p>
-                            </div>
-                          </div>
-                        ))}
-                    </div>
-
-                    {!transcriptExpanded && activeLog.transcriptJson.length > 4 && (
-                      <p className="text-xs text-muted-foreground text-center">
-                        {activeLog.transcriptJson.length} messages — click Expand to see all
-                      </p>
-                    )}
-                  </div>
-                ) : activeLog.transcriptText ? (
-                  <div className="rounded-lg border border-border bg-muted/40 p-3">
-                    <p className="text-xs font-medium text-muted-foreground mb-2">Transcript</p>
-                    <div className={`text-xs text-foreground whitespace-pre-wrap leading-relaxed ${transcriptExpanded ? "" : "max-h-48 overflow-hidden"}`}>
-                      {activeLog.transcriptText}
-                    </div>
-                    <button
-                      onClick={() => setTranscriptExpanded(!transcriptExpanded)}
-                      className="mt-2 flex items-center gap-1 text-xs text-primary hover:underline"
-                    >
-                      {transcriptExpanded ? <><ChevronUp className="h-3 w-3" />Collapse</> : <><ChevronDown className="h-3 w-3" />Show more</>}
-                    </button>
-                  </div>
-                ) : (
-                  <div className="rounded-lg border border-dashed border-border p-4 text-center">
-                    <p className="text-xs text-muted-foreground">No transcript available</p>
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-        </SheetContent>
-      </Sheet>
+      <CallLogDrawer
+        log={activeLog}
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+      />
     </DashboardLayout>
   );
 }

@@ -7,12 +7,14 @@ import { Label } from "@/components/ui/label";
 import { AlertBanner } from "@/components/ui/alert-banner";
 import { PublicLayout } from "@/components/layout/PublicLayout";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/lib/supabase";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
   const [touched, setTouched] = useState(false);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const emailInvalid = touched && !email.includes("@");
 
@@ -22,9 +24,17 @@ export default function ForgotPasswordPage() {
     if (emailInvalid || !email) return;
 
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 1000));
+    setError(null);
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
     setLoading(false);
-    setSuccess(true);
+
+    if (error) {
+      setError(error.message);
+    } else {
+      setSuccess(true);
+    }
   }
 
   return (
@@ -66,6 +76,7 @@ export default function ForgotPasswordPage() {
             </div>
           ) : (
             <form onSubmit={handleSubmit} noValidate className="space-y-4">
+              {error && <AlertBanner variant="error" message={error} dismissible />}
               <div className="space-y-1.5">
                 <Label htmlFor="email">Email address</Label>
                 <Input

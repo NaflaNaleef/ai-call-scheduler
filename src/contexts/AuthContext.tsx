@@ -16,8 +16,10 @@ interface AuthContextValue {
   user: AuthUser | null;
   loading: boolean;
   login: (email: string, password: string, remember?: boolean) => Promise<void>;
+  loginWithOAuth: (provider: 'google' | 'azure') => Promise<void>;
   signUp: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -37,7 +39,7 @@ function authUserFallback(authUser: { id: string; email?: string }): AuthUser {
   };
 }
 
-async function fetchUserProfile(authUserId: string): Promise<AuthUser | null> {
+export async function fetchUserProfile(authUserId: string): Promise<AuthUser | null> {
   try {
     const { data, error } = await supabase
       .from("users")
@@ -141,14 +143,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (error) throw new Error(error.message);
   };
 
+  const loginWithOAuth = async (provider: 'google' | 'azure') => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider,
+      options: { redirectTo: window.location.origin }
+    });
+    if (error) throw new Error(error.message);
+  };
+
   const logout = async () => {
     localStorage.removeItem(REMEMBER_KEY);
     const { error } = await supabase.auth.signOut();
     if (error) throw new Error(error.message);
   };
 
+  const refreshUser = async () => {
+    if (!user?.id) return;
+    const profile = await fetchUserProfile(user.id);
+    if (profile) setUser(profile);
+  };
+
   return (
-    <AuthContext.Provider value={{ isAuthenticated, user, loading, login, signUp, logout }}>
+    <AuthContext.Provider value={{ isAuthenticated, user, loading, login, loginWithOAuth, signUp, logout, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );
