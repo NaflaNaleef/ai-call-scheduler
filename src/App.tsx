@@ -21,6 +21,7 @@ import GroupsPage from "./pages/Groups";
 import SignInPage from "./pages/auth/SignIn";
 import SignUpPage from "./pages/auth/SignUp";
 import ForgotPasswordPage from "./pages/auth/ForgotPassword";
+import ResetPasswordPage from "./pages/auth/ResetPassword";
 
 const queryClient = new QueryClient();
 
@@ -34,8 +35,10 @@ const App = () => (
           <Routes>
             {/* Public routes — no sidebar */}
             <Route path="/sign-in" element={<SignInPage />} />
+            <Route path="/login" element={<SignInPage />} />
             <Route path="/sign-up" element={<SignUpPage />} />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
 
             {/* Protected routes — with sidebar via DashboardLayout */}
             <Route

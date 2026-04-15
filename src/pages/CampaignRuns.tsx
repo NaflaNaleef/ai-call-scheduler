@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { useLocation } from "react-router-dom";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { DataTable } from "@/components/ui/data-table";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -129,6 +130,7 @@ const DRAWER_PAGE_SIZE = 5;
 
 export default function CampaignRunsPage() {
   const { user } = useAuth();
+  const location = useLocation();
 
   const [runs, setRuns] = useState<CampaignRun[]>([]);
   const [loading, setLoading] = useState(true);
@@ -212,6 +214,17 @@ export default function CampaignRunsPage() {
   }, [user?.org_id]);
 
   useEffect(() => { fetchRuns(); }, [fetchRuns]);
+
+  useEffect(() => {
+    if (location.state?.openRunId && runs.length > 0) {
+      const targetId = location.state.openRunId;
+      const run = runs.find(r => r.id === targetId);
+      if (run) {
+        openDrawer(run);
+        window.history.replaceState({}, document.title);
+      }
+    }
+  }, [runs, location.state?.openRunId]);
 
   // ── Fetch campaign_contacts for drawer (source of truth during & after run) ─
   async function fetchCallLogs(runId: string, allRuns: CampaignRun[]) {

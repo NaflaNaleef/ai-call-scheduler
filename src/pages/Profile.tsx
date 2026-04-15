@@ -9,8 +9,11 @@ import { useState } from "react";
 import {
   User, Mail, Phone, Shield, Eye, EyeOff, Loader2,
   Monitor, Smartphone, Globe, Clock, CheckCircle,
-  AlertTriangle, LogOut, Link2, Unlink,
+  AlertTriangle, LogOut, Link2, Unlink, RefreshCw
 } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/lib/supabase";
+import { useEffect } from "react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
   DialogFooter, DialogDescription,
@@ -18,16 +21,6 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 
-const INITIAL_PROFILE = {
-  name: "Jane Doe",
-  email: "jane.doe@company.com",
-  phone: "+1 555-0100",
-  role: "Admin",
-  initials: "JD",
-  department: "Engineering",
-  location: "New York, US",
-  joinedAt: "Jan 15, 2024",
-};
 
 const MOCK_SESSIONS = [
   { id: "1", device: "Chrome on macOS", ip: "192.168.1.42", lastActive: "Just now", current: true, icon: Monitor },
@@ -63,10 +56,32 @@ function getPasswordStrength(pw: string): { label: string; value: number; color:
 }
 
 export default function ProfilePage() {
+  const { user, refreshUser } = useAuth();
   const { toast } = useToast();
-  const [profile, setProfile] = useState(INITIAL_PROFILE);
+
+  const getInitialProfile = () => ({
+    name: user?.name || "—",
+    email: user?.email || "—",
+    phone: "—",
+    role: user?.role || "—",
+    initials: user?.initials || "?",
+    department: "—",
+    location: "—",
+    joinedAt: "—",
+  });
+
+  const [profile, setProfile] = useState(getInitialProfile());
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(INITIAL_PROFILE);
+  const [draft, setDraft] = useState(getInitialProfile());
+
+  useEffect(() => {
+    if (user) {
+      const p = getInitialProfile();
+      setProfile(p);
+      setDraft(p);
+    }
+  }, [user]);
+
   const [saving, setSaving] = useState(false);
   const [pwModal, setPwModal] = useState(false);
   const [pwForm, setPwForm] = useState({ current: "", next: "", confirm: "" });
@@ -88,29 +103,71 @@ export default function ProfilePage() {
   const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draft.email);
 
   const handleSave = async () => {
-    if (!draft.name.trim() || !emailValid) return;
+    if (!draft.name.trim() || !emailValid || !user) return;
     setSaving(true);
-    await new Promise((r) => setTimeout(r, 1000));
-    const updated = {
-      ...draft,
-      initials: draft.name.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2),
-    };
-    setProfile(updated);
-    setDraft(updated);
-    setEditing(false);
-    setSaving(false);
-    toast({ title: "Profile updated", description: "Your changes have been saved." });
+
+    try {
+      const nameParts = draft.name.trim().split(" ");
+      const firstName = nameParts[0] || "";
+      const lastName = nameParts.slice(1).join(" ") || "";
+
+      console.log("user.dbId:", user?.dbId);
+      console.log("firstName:", firstName);
+      console.log("lastName:", lastName);
+      console.log("Saving with dbId:", user?.dbId, typeof user?.dbId);
+
+      const { data, error } = await supabase.rpc("f_update_user", {
+        p_id: user.dbId,
+        p_email: null,
+        p_first_name: firstName,
+        p_last_name: lastName,
+        p_role: null,
+      });
+      console.log("RPC result:", data, error);
+      if (error) throw error;
+      await refreshUser();
+
+      const updated = {
+        ...draft,
+        initials: draft.name.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2),
+      };
+      setProfile(updated);
+      setDraft(updated);
+      setEditing(false);
+      toast({ title: "Profile updated", description: "Your changes have been saved." });
+    } catch (err: any) {
+      toast({
+        title: "Update failed",
+        description: err.message || "An error occurred while saving changes.",
+        variant: "destructive"
+      });
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleCancel = () => { setDraft(profile); setEditing(false); };
 
   const handleChangePw = async () => {
     setPwSaving(true);
-    await new Promise((r) => setTimeout(r, 1000));
-    setPwSaving(false);
-    setPwModal(false);
-    setPwForm({ current: "", next: "", confirm: "" });
-    toast({ title: "Password changed", description: "Your password has been updated." });
+    try {
+      const { error } = await supabase.auth.updateUser({
+        password: pwForm.next
+      });
+      if (error) throw error;
+
+      setPwModal(false);
+      setPwForm({ current: "", next: "", confirm: "" });
+      toast({ title: "Password changed", description: "Your password has been updated." });
+    } catch (err: any) {
+      toast({
+        title: "Update failed",
+        description: err.message || "An error occurred while changing password.",
+        variant: "destructive"
+      });
+    } finally {
+      setPwSaving(false);
+    }
   };
 
   const pwValid = pwForm.current.length >= 1 && pwForm.next.length >= 8 && pwForm.next === pwForm.confirm;

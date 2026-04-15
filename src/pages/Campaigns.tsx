@@ -914,6 +914,7 @@ function CampaignDetailDrawer({
 
   // Launch run state
   const [activeRun, setActiveRun] = useState<any>(null);
+  const [latestRun, setLatestRun] = useState<any>(null);
   const [launchLoading, setLaunchLoading] = useState(false);
   const [launchError, setLaunchError] = useState<string | null>(null);
   const [launchSuccess, setLaunchSuccess] = useState<any>(null);
@@ -940,7 +941,7 @@ function CampaignDetailDrawer({
     if (!open) {
       setFullCampaign(null); setFields([]);
       setShowReviewModal(false); setReviewContacts([]); setReviewLoading(false);
-      setActiveRun(null); setLaunchSuccess(null); setLaunchError(null);
+      setActiveRun(null); setLatestRun(null); setLaunchSuccess(null); setLaunchError(null);
       setGenericConfirmLoading(false);
     }
   }, [open]);
@@ -978,6 +979,17 @@ function CampaignDetailDrawer({
       const { data, error } = await supabase.rpc("f_get_active_campaign_run", { p_camp_id: listCampaign.id });
       if (!error && data) setActiveRun(Array.isArray(data) ? data[0] : data);
       else setActiveRun(null);
+
+      // Also fetch the latest run for this campaign
+      const { data: latestData } = await supabase
+        .from('campaign_runs')
+        .select('id, status, started_at, attempt_number')
+        .eq('campaign_id', listCampaign.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (latestData) setLatestRun(latestData);
     } catch (err) { console.error("fetchActiveRun error:", err); }
   }
 
@@ -1259,7 +1271,33 @@ function CampaignDetailDrawer({
                     <p className="text-sm font-semibold">Campaign is currently running</p>
                   </div>
                   <p className="text-xs text-muted-foreground font-mono">Run ID: {activeRun.id?.slice(0, 8)}...</p>
-                  <Button variant="outline" size="sm" className="w-full h-8 text-xs" onClick={() => { onClose(); navigate("/campaign-runs"); }}>
+                </div>
+              )}
+
+              {/* Latest Run (if not active) */}
+              {!launchSuccess && !activeRun && latestRun && !isDraft && (
+                <div className="rounded-lg border border-border bg-muted/40 p-3 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
+                    <p className="text-sm font-semibold">Latest Run</p>
+                    <span className="text-xs text-muted-foreground capitalize">
+                      {latestRun.status?.toLowerCase()}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground font-mono">
+                    Run ID: {latestRun.id?.slice(0, 8)}...
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full h-8 text-xs"
+                    onClick={() => {
+                      onClose();
+                      navigate("/campaign-runs", {
+                        state: { openRunId: latestRun.id }
+                      });
+                    }}
+                  >
                     <ExternalLink className="h-3.5 w-3.5 mr-1.5" /> View Run Details
                   </Button>
                 </div>

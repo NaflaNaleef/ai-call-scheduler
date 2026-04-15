@@ -19,6 +19,7 @@ interface AuthContextValue {
   loginWithOAuth: (provider: 'google' | 'azure') => Promise<void>;
   signUp: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -38,7 +39,7 @@ function authUserFallback(authUser: { id: string; email?: string }): AuthUser {
   };
 }
 
-async function fetchUserProfile(authUserId: string): Promise<AuthUser | null> {
+export async function fetchUserProfile(authUserId: string): Promise<AuthUser | null> {
   try {
     const { data, error } = await supabase
       .from("users")
@@ -156,8 +157,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (error) throw new Error(error.message);
   };
 
+  const refreshUser = async () => {
+    if (!user?.id) return;
+    const profile = await fetchUserProfile(user.id);
+    if (profile) setUser(profile);
+  };
+
   return (
-    <AuthContext.Provider value={{ isAuthenticated, user, loading, login, loginWithOAuth, signUp, logout }}>
+    <AuthContext.Provider value={{ isAuthenticated, user, loading, login, loginWithOAuth, signUp, logout, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );
