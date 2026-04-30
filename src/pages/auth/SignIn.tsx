@@ -34,12 +34,6 @@ export default function SignInPage() {
     setLoading(true);
     setError(null);
     try {
-      // Mock: reject wrong creds
-      if (password === "wrong") {
-        await new Promise((r) => setTimeout(r, 1000));
-        setError("Invalid email or password. Please try again.");
-        return;
-      }
       try {
         await login(email, password, rememberMe);
         navigate(from, { replace: true });
