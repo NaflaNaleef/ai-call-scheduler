@@ -82,6 +82,22 @@ export default function ProfilePage() {
     }
   }, [user]);
 
+  useEffect(() => {
+    if (user?.org_id) {
+      supabase
+        .from("organizations")
+        .select("name, email, timezone")
+        .eq("id", user.org_id)
+        .single()
+        .then(({ data }) => {
+          if (data) {
+            setOrgData({ name: data.name || "", email: data.email || "", timezone: data.timezone || "" });
+            setOrgDraft({ name: data.name || "", email: data.email || "", timezone: data.timezone || "" });
+          }
+        });
+    }
+  }, [user?.org_id]);
+
   const [saving, setSaving] = useState(false);
   const [pwModal, setPwModal] = useState(false);
   const [pwForm, setPwForm] = useState({ current: "", next: "", confirm: "" });
@@ -92,6 +108,11 @@ export default function ProfilePage() {
   const [connections, setConnections] = useState(MOCK_CONNECTIONS);
   const [sessions, setSessions] = useState(MOCK_SESSIONS);
   const [revokeModal, setRevokeModal] = useState<string | null>(null);
+
+  const [orgData, setOrgData] = useState({ name: "", email: "", timezone: "" });
+  const [orgDraft, setOrgDraft] = useState({ name: "", email: "", timezone: "" });
+  const [orgEditing, setOrgEditing] = useState(false);
+  const [orgSaving, setOrgSaving] = useState(false);
 
   const hasChanges =
     draft.name !== profile.name ||
@@ -143,6 +164,27 @@ export default function ProfilePage() {
       });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSaveOrg = async () => {
+    if (!user?.org_id || !orgDraft.name.trim()) return;
+    setOrgSaving(true);
+    try {
+      const { error } = await supabase.rpc("f_update_organization", {
+        p_id: user.org_id,
+        p_name: orgDraft.name.trim(),
+        p_email: orgDraft.email.trim() || null,
+        p_timezone: orgDraft.timezone.trim() || null,
+      });
+      if (error) throw error;
+      setOrgData({ ...orgDraft });
+      setOrgEditing(false);
+      toast({ title: "Organization updated", description: "Your organization details have been saved." });
+    } catch (err: any) {
+      toast({ title: "Update failed", description: err.message, variant: "destructive" });
+    } finally {
+      setOrgSaving(false);
     }
   };
 
@@ -263,6 +305,7 @@ export default function ProfilePage() {
         <Tabs defaultValue="security" className="w-full">
           <TabsList className="w-full justify-start bg-muted/50 rounded-lg p-1">
             <TabsTrigger value="security">Security</TabsTrigger>
+            <TabsTrigger value="organization">Organization</TabsTrigger>
             <TabsTrigger value="sessions">Active Sessions</TabsTrigger>
             <TabsTrigger value="connections">Connected Accounts</TabsTrigger>
             <TabsTrigger value="activity">Activity Log</TabsTrigger>
@@ -309,6 +352,59 @@ export default function ProfilePage() {
                   </div>
                 </div>
                 <Badge variant="outline" className="text-xs">Verified</Badge>
+              </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="organization" className="mt-4">
+            <div className="bg-card rounded-lg border border-border p-6 shadow-sm space-y-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold">Organization Details</h3>
+                  <p className="text-sm text-muted-foreground">
+                    {orgEditing ? "Update your organization information below." : "Your organization information."}
+                  </p>
+                </div>
+                {orgEditing ? (
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" onClick={() => { setOrgDraft(orgData); setOrgEditing(false); }} disabled={orgSaving}>
+                      Cancel
+                    </Button>
+                    <Button size="sm" onClick={handleSaveOrg} disabled={orgSaving || !orgDraft.name.trim()}>
+                      {orgSaving ? <><Loader2 className="h-4 w-4 animate-spin" /> Saving…</> : "Save Changes"}
+                    </Button>
+                  </div>
+                ) : (
+                  <Button variant="outline" size="sm" onClick={() => setOrgEditing(true)}>
+                    Edit
+                  </Button>
+                )}
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground uppercase tracking-wider">Organization Name</Label>
+                  {orgEditing ? (
+                    <Input value={orgDraft.name} onChange={(e) => setOrgDraft({ ...orgDraft, name: e.target.value })} placeholder="Organization name" />
+                  ) : (
+                    <p className="text-sm font-medium py-2">{orgData.name || "—"}</p>
+                  )}
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground uppercase tracking-wider">Email</Label>
+                  {orgEditing ? (
+                    <Input value={orgDraft.email} onChange={(e) => setOrgDraft({ ...orgDraft, email: e.target.value })} placeholder="org@example.com" type="email" />
+                  ) : (
+                    <p className="text-sm font-medium py-2">{orgData.email || "—"}</p>
+                  )}
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground uppercase tracking-wider">Timezone</Label>
+                  {orgEditing ? (
+                    <Input value={orgDraft.timezone} onChange={(e) => setOrgDraft({ ...orgDraft, timezone: e.target.value })} placeholder="e.g. Australia/Sydney" />
+                  ) : (
+                    <p className="text-sm font-medium py-2">{orgData.timezone || "—"}</p>
+                  )}
+                </div>
               </div>
             </div>
           </TabsContent>

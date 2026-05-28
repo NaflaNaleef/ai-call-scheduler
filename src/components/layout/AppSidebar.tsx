@@ -15,8 +15,12 @@ import {
   Menu,
   List,
   FolderOpen,
+  Building2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/lib/supabase";
+import { useEffect } from "react";
 
 interface NavItem {
   label: string;
@@ -144,6 +148,21 @@ function SidebarItem({
 export function AppSidebar() {
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
+  const { user, subscription } = useAuth();
+  const [orgName, setOrgName] = useState<string>("");
+
+  useEffect(() => {
+    if (user?.org_id) {
+      supabase
+        .from("organizations")
+        .select("name")
+        .eq("id", user.org_id)
+        .single()
+        .then(({ data }) => {
+          if (data) setOrgName(data.name);
+        });
+    }
+  }, [user?.org_id]);
 
   return (
     <aside
@@ -154,9 +173,19 @@ export function AppSidebar() {
     >
       <div className="flex items-center justify-between h-14 px-4 border-b border-sidebar-border">
         {!collapsed && (
-          <span className="text-lg font-semibold text-sidebar-accent-foreground tracking-tight">
-            SaaSDash
-          </span>
+          <div className="flex flex-col">
+            <span className="text-lg font-semibold text-sidebar-accent-foreground tracking-tight">
+              SaaSDash
+            </span>
+            {orgName && (
+              <div className="flex items-center gap-1 mt-0.5">
+                <Building2 className="h-3 w-3 text-sidebar-muted" />
+                <span className="text-xs text-sidebar-muted truncate max-w-[140px]">
+                  {orgName}
+                </span>
+              </div>
+            )}
+          </div>
         )}
         <button
           onClick={() => setCollapsed(!collapsed)}
@@ -176,6 +205,91 @@ export function AppSidebar() {
           />
         ))}
       </nav>
+
+      {!collapsed && subscription && (
+        <div className="px-3 py-3 border-t border-sidebar-border space-y-2">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-sidebar-muted">
+            Usage
+          </p>
+          
+          {/* Call Minutes */}
+          {(() => {
+            const used = subscription.call_minutes_used;
+            const max = subscription.max_call_minutes_per_month;
+            const pct = max === -1 ? 0 : Math.round((used / max) * 100);
+            const isWarning = pct >= 80 && pct < 100;
+            const isLimit = pct >= 100;
+            return (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] text-sidebar-muted">
+                    Call Minutes
+                  </span>
+                  <span className={`text-[11px] font-medium tabular-nums ${
+                    isLimit ? 'text-destructive' : 
+                    isWarning ? 'text-warning' : 
+                    'text-sidebar-muted'
+                  }`}>
+                    {max === -1 ? `${used} / ∞` : `${used} / ${max}`}
+                  </span>
+                </div>
+                <div className="h-1.5 w-full rounded-full bg-sidebar-accent overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${
+                      isLimit ? 'bg-destructive' : 
+                      isWarning ? 'bg-warning' : 
+                      'bg-primary'
+                    }`}
+                    style={{ width: max === -1 ? '10%' : `${Math.min(100, pct)}%` }}
+                  />
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Contacts */}
+          {(() => {
+            const used = subscription.contacts_count;
+            const max = subscription.max_contacts;
+            const pct = max === -1 ? 0 : Math.round((used / max) * 100);
+            const isWarning = pct >= 80 && pct < 100;
+            const isLimit = pct >= 100;
+            return (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] text-sidebar-muted">
+                    Contacts
+                  </span>
+                  <span className={`text-[11px] font-medium tabular-nums ${
+                    isLimit ? 'text-destructive' : 
+                    isWarning ? 'text-warning' : 
+                    'text-sidebar-muted'
+                  }`}>
+                    {max === -1 ? `${used} / ∞` : `${used} / ${max}`}
+                  </span>
+                </div>
+                <div className="h-1.5 w-full rounded-full bg-sidebar-accent overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${
+                      isLimit ? 'bg-destructive' : 
+                      isWarning ? 'bg-warning' : 
+                      'bg-primary'
+                    }`}
+                    style={{ width: max === -1 ? '10%' : `${Math.min(100, pct)}%` }}
+                  />
+                </div>
+              </div>
+            );
+          })()}
+
+          <Link 
+            to="/subscriptions"
+            className="block text-[11px] text-primary hover:underline mt-1"
+          >
+            Manage plan →
+          </Link>
+        </div>
+      )}
     </aside>
   );
 }
@@ -188,6 +302,21 @@ export function MobileSidebar({
   onClose: () => void;
 }) {
   const location = useLocation();
+  const { user } = useAuth();
+  const [orgName, setOrgName] = useState<string>("");
+
+  useEffect(() => {
+    if (user?.org_id) {
+      supabase
+        .from("organizations")
+        .select("name")
+        .eq("id", user.org_id)
+        .single()
+        .then(({ data }) => {
+          if (data) setOrgName(data.name);
+        });
+    }
+  }, [user?.org_id]);
 
   if (!open) return null;
 
@@ -196,9 +325,19 @@ export function MobileSidebar({
       <div className="fixed inset-0 bg-foreground/40 z-40 md:hidden" onClick={onClose} />
       <aside className="fixed left-0 top-0 h-full w-60 bg-sidebar text-sidebar-foreground z-50 md:hidden flex flex-col animate-fade-in">
         <div className="flex items-center h-14 px-4 border-b border-sidebar-border">
-          <span className="text-lg font-semibold text-sidebar-accent-foreground tracking-tight">
-            SaaSDash
-          </span>
+          <div className="flex flex-col">
+            <span className="text-lg font-semibold text-sidebar-accent-foreground tracking-tight">
+              SaaSDash
+            </span>
+            {orgName && (
+              <div className="flex items-center gap-1 mt-0.5">
+                <Building2 className="h-3 w-3 text-sidebar-muted" />
+                <span className="text-xs text-sidebar-muted truncate max-w-[140px]">
+                  {orgName}
+                </span>
+              </div>
+            )}
+          </div>
         </div>
         <nav className="flex-1 py-4 space-y-1 px-2 overflow-y-auto">
           {navItems.map((item) => (

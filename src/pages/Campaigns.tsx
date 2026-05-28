@@ -893,13 +893,14 @@ function CreateCampaignModal({ open, onClose, onCreate, preselectedGroup }: Crea
 // ── Campaign Detail Drawer (tabbed) ───────────────────────────────────────────
 
 function CampaignDetailDrawer({
-  campaign: listCampaign, open, onClose, onRefresh, highlightLaunch = false,
+  campaign: listCampaign, open, onClose, onRefresh, highlightLaunch = false, callMinutesExhausted = false,
 }: {
   campaign: Campaign | null;
   open: boolean;
   onClose: () => void;
   onRefresh: () => void;
   highlightLaunch?: boolean;
+  callMinutesExhausted?: boolean;
 }) {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -976,7 +977,7 @@ function CampaignDetailDrawer({
   async function fetchActiveRun() {
     if (!listCampaign) return;
     try {
-      const { data, error } = await supabase.rpc("f_get_active_campaign_run", { p_camp_id: listCampaign.id });
+      const { data, error } = await supabase.rpc("f_get_active_campaign_run", { p_campaign_id: listCampaign.id });
       if (!error && data) setActiveRun(Array.isArray(data) ? data[0] : data);
       else setActiveRun(null);
 
@@ -1046,7 +1047,7 @@ function CampaignDetailDrawer({
   const isDraft = status === "DRAFT";
   const hasContacts = listCampaign.totalRecipients > 0;
   const hasFields = fields.length > 0;
-  const canLaunch = isDraft && hasContacts && !activeRun && !launchSuccess;
+  const canLaunch = isDraft && hasContacts && !activeRun && !launchSuccess && !callMinutesExhausted;
 
   const groupsLinkedCount = loading ? "..." : (fullCampaign?.contact_group_ids?.length ?? 0);
   const directContactsCount = loading ? "..." : (fullCampaign?.target_contact_ids?.length ?? 0);
@@ -1336,6 +1337,15 @@ function CampaignDetailDrawer({
                       <p className="text-xs text-muted-foreground">
                         {listCampaign.totalRecipients} contacts
                         {fields.length > 0 && ` · ${fields.length} field${fields.length !== 1 ? "s" : ""}`}
+                      </p>
+                    </div>
+                  )}
+
+                  {callMinutesExhausted && (
+                    <div className="flex items-start gap-2 p-3 rounded-lg border border-destructive/20 bg-destructive/10">
+                      <AlertCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+                      <p className="text-xs text-destructive">
+                        Call minutes limit reached. Please upgrade your plan to launch campaigns.
                       </p>
                     </div>
                   )}
@@ -2031,7 +2041,7 @@ function GenericConfirmDialog({ open, onClose, onConfirm, loading, title, descri
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function CampaignsPage() {
-  const { user } = useAuth();
+  const { user, subscription } = useAuth();
   const location = useLocation();
   const searchParams = new URLSearchParams(location.search);
   const preselectedGroup = searchParams.get("createFromGroup") ?? undefined;
@@ -2056,6 +2066,17 @@ export default function CampaignsPage() {
     confirmVariant: "amber" | "green"; onConfirm: () => void;
   } | null>(null);
   const [genericConfirmLoading, setGenericConfirmLoading] = useState(false);
+
+  const canCreateCampaign = !subscription || 
+    subscription.max_campaigns === -1 || 
+    subscription.campaigns_count < subscription.max_campaigns;
+
+  const callMinutesExhausted = subscription && 
+    subscription.call_minutes_used >= subscription.max_call_minutes_per_month;
+
+  const callMinutesWarning = subscription &&
+    subscription.call_minutes_used >= subscription.max_call_minutes_per_month * 0.8 &&
+    subscription.call_minutes_used < subscription.max_call_minutes_per_month;
 
 
 
@@ -2260,7 +2281,16 @@ export default function CampaignsPage() {
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-4">
           <p className="text-sm text-muted-foreground">Create and manage outreach campaigns</p>
-          <Button size="sm" onClick={() => setCreateOpen(true)}><Plus className="h-4 w-4 mr-1" /> New Campaign</Button>
+          <Button 
+            size="sm" 
+            onClick={() => setCreateOpen(true)}
+            disabled={!canCreateCampaign}
+            title={!canCreateCampaign 
+              ? `Campaign limit reached. Please upgrade your plan.` 
+              : undefined}
+          >
+            <Plus className="h-4 w-4 mr-1" /> New Campaign
+          </Button>
         </div>
 
         <div className="flex flex-col sm:flex-row gap-3">
@@ -2312,6 +2342,7 @@ export default function CampaignsPage() {
         }}
         onRefresh={fetchCampaigns}
         highlightLaunch={shouldHighlightLaunch}
+        callMinutesExhausted={callMinutesExhausted}
       />
 
       <GenericConfirmDialog

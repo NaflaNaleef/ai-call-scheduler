@@ -87,7 +87,10 @@ const PAGE_SIZE = 10;
 
 // --- Component ---
 export default function ContactsPage() {
-  const { user } = useAuth();
+  const isValidPhone = (phone: string) => /^\+[1-9][0-9]{7,14}$/.test(phone);
+  const isValidAustralianPhone = (phone: string) => /^\+61[2-9][0-9]{8}$/.test(phone);
+
+  const { user, subscription } = useAuth();
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [contactsLoading, setContactsLoading] = useState(true);
   const [page, setPage] = useState(1);
@@ -108,6 +111,15 @@ export default function ContactsPage() {
   const [editingContactId, setEditingContactId] = useState<string | null>(null);
   const [editLoading, setEditLoading] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
+
+  const canAddContact = !subscription || 
+    subscription.max_contacts === -1 || 
+    subscription.contacts_count < subscription.max_contacts;
+
+  const contactsAtWarning = subscription && 
+    subscription.max_contacts !== -1 &&
+    subscription.contacts_count >= subscription.max_contacts * 0.8 &&
+    subscription.contacts_count < subscription.max_contacts;
 
   const [selectedNewContactGroupIds, setSelectedNewContactGroupIds] = useState<string[]>([]);
   const [groupsExpanded, setGroupsExpanded] = useState(false);
@@ -270,6 +282,11 @@ export default function ContactsPage() {
 
   const handleSaveContact = async () => {
     if (!user?.org_id || !user?.id) return;
+
+    if (!canAddContact) {
+      setSaveError('Contact limit reached. Please upgrade your plan.');
+      return;
+    }
 
     setSaveLoading(true);
     setSaveError(null);
@@ -543,19 +560,19 @@ export default function ContactsPage() {
     <DashboardLayout title="All Contacts">
       <div className="space-y-4">
         {/* Usage limit banners */}
-        {contactsUsed >= CONTACT_LIMIT && (
-          <AlertBanner
-            variant="error"
-            title="Contact limit reached"
-            message={`You have reached your ${CONTACT_LIMIT.toLocaleString()} contact limit. Upgrade your plan to add more contacts.`}
-          />
-        )}
-        {contactsUsed >= CONTACT_LIMIT * 0.8 && contactsUsed < CONTACT_LIMIT && (
+        {contactsAtWarning && (
           <AlertBanner
             variant="warning"
             title="Nearing contact limit"
-            message={`You've used ${contactsUsed.toLocaleString()} of ${CONTACT_LIMIT.toLocaleString()} contacts. Upgrade before reaching your limit.`}
+            message={`You've used ${subscription?.contacts_count} of ${subscription?.max_contacts} contacts on your ${subscription?.plan_name} plan.`}
             dismissible
+          />
+        )}
+        {subscription && subscription.max_contacts !== -1 && subscription.contacts_count >= subscription.max_contacts && (
+          <AlertBanner
+            variant="error"
+            title="Contact limit reached"
+            message={`You have reached your ${subscription.max_contacts.toLocaleString()} contact limit. Upgrade your plan to add more contacts.`}
           />
         )}
 
@@ -564,8 +581,10 @@ export default function ContactsPage() {
           <p className="text-sm text-muted-foreground">Manage your contact list</p>
           <Button
             size="sm"
-            disabled={contactsUsed >= CONTACT_LIMIT}
-            title={contactsUsed >= CONTACT_LIMIT ? "Contact limit reached — upgrade your plan" : undefined}
+            disabled={!canAddContact}
+            title={!canAddContact 
+              ? `Contact limit reached (${subscription?.contacts_count}/${subscription?.max_contacts}). Please upgrade your plan.` 
+              : undefined}
             onClick={() => {
               setNewContact({ firstName: "", lastName: "", phone: "", email: "", timezone: "" });
               setSelectedNewContactGroupIds([]);
@@ -929,11 +948,18 @@ export default function ContactsPage() {
               <Label htmlFor="ac-phone">Phone Number <span className="text-destructive">*</span></Label>
               <Input
                 id="ac-phone"
-                placeholder="+1234567890"
+                placeholder="+61431161407"
                 value={newContact.phone}
                 disabled={saveLoading}
+                className={newContact.phone && !isValidAustralianPhone(newContact.phone)
+                  ? "border-destructive focus-visible:ring-destructive" : ""}
                 onChange={(e) => setNewContact((p) => ({ ...p, phone: e.target.value }))}
               />
+              {newContact.phone && !isValidAustralianPhone(newContact.phone) && (
+                <p className="text-xs text-destructive">
+                  Please enter a valid Australian number (e.g. +61431161407)
+                </p>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="ac-email">Email</Label>
@@ -1012,7 +1038,7 @@ export default function ContactsPage() {
             <Button
               disabled={
                 !newContact.firstName.trim() ||
-                !newContact.phone.trim() ||
+                !newContact.phone.trim() || !isValidAustralianPhone(newContact.phone) ||
                 saveLoading ||
                 (newContact.email.trim() !== "" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newContact.email))
               }
@@ -1063,11 +1089,18 @@ export default function ContactsPage() {
               <Label htmlFor="ec-phone">Phone Number <span className="text-destructive">*</span></Label>
               <Input
                 id="ec-phone"
-                placeholder="+1234567890"
+                placeholder="+61431161407"
                 value={editingContactForm.phone}
                 disabled={editLoading}
+                className={editingContactForm.phone && !isValidAustralianPhone(editingContactForm.phone)
+                  ? "border-destructive focus-visible:ring-destructive" : ""}
                 onChange={(e) => setEditingContactForm((p) => ({ ...p, phone: e.target.value }))}
               />
+              {editingContactForm.phone && !isValidAustralianPhone(editingContactForm.phone) && (
+                <p className="text-xs text-destructive">
+                  Please enter a valid Australian number (e.g. +61431161407)
+                </p>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="ec-email">Email</Label>
@@ -1100,7 +1133,7 @@ export default function ContactsPage() {
             <Button
               disabled={
                 !editingContactForm.firstName.trim() ||
-                !editingContactForm.phone.trim() ||
+                !editingContactForm.phone.trim() || !isValidAustralianPhone(editingContactForm.phone) ||
                 editLoading ||
                 (editingContactForm.email.trim() !== "" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(editingContactForm.email))
               }

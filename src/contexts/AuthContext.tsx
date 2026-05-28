@@ -11,7 +11,26 @@ export interface AuthUser {
   org_id: string | null;
 }
 
-interface AuthContextValue {
+export interface OrgSubscription {
+  plan_id: string;
+  plan_name: string;
+  price_monthly: number;
+  status: string;
+  max_contacts: number;
+  max_campaigns: number;
+  max_call_minutes_per_month: number;
+  max_team_members: number;
+  max_contacts_per_run: number;
+  max_retries: number;
+  allow_scheduling: boolean;
+  allow_recurring: boolean;
+  calls_made: number;
+  call_minutes_used: number;
+  contacts_count: number;
+  campaigns_count: number;
+}
+
+export interface AuthContextValue {
   isAuthenticated: boolean;
   user: AuthUser | null;
   loading: boolean;
@@ -20,6 +39,9 @@ interface AuthContextValue {
   signUp: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
+  subscription: OrgSubscription | null;
+  subscriptionLoading: boolean;
+  refreshSubscription: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -84,11 +106,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [subscription, setSubscription] = useState<OrgSubscription | null>(null);
+  const [subscriptionLoading, setSubscriptionLoading] = useState(false);
+
+  const fetchSubscription = async (orgId: string) => {
+    if (!orgId) return;
+    setSubscriptionLoading(true);
+    try {
+      const { data, error } = await supabase
+        .rpc('f_get_org_subscription_and_usage', { p_org_id: orgId });
+      if (!error && data?.[0]) setSubscription(data[0]);
+    } catch (err) {
+      console.error('fetchSubscription error:', err);
+    } finally {
+      setSubscriptionLoading(false);
+    }
+  };
+
+  const refreshSubscription = async () => {
+    if (user?.org_id) await fetchSubscription(user.org_id);
+  };
 
   useEffect(() => {
     // Listen for auth state changes
     // This also handles the initial session check in Supabase v2
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+    let usageChannel: any = null;
+
+    const { data: { subscription: authSub } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         console.log("Auth state change:", event, session?.user?.id);
 
@@ -101,13 +145,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
             // Fetch full profile but don't let it block the loading state Transition
             fetchUserProfile(session.user.id).then(profile => {
-              if (profile) setUser(profile);
+              if (profile) {
+                setUser(profile);
+                if (profile.org_id) {
+                  fetchSubscription(profile.org_id);
+                  // Real-time usage updates
+                  usageChannel = supabase
+                    .channel('auth_org_usage')
+                    .on('postgres_changes', {
+                      event: 'UPDATE',
+                      schema: 'public',
+                      table: 'org_usage',
+                      filter: `org_id=eq.${profile.org_id}`
+                    }, () => {
+                      fetchSubscription(profile.org_id!);
+                    })
+                    .subscribe();
+                }
+              }
             }).catch(err => {
               console.error("Profile background fetch failed:", err);
             });
           } else {
             setUser(null);
             setIsAuthenticated(false);
+            setSubscription(null);
           }
         } catch (err) {
           console.error("onAuthStateChange error:", err);
@@ -118,8 +180,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     );
 
-    return () => subscription.unsubscribe();
+    return () => {
+      authSub.unsubscribe();
+      if (usageChannel) supabase.removeChannel(usageChannel);
+    };
   }, []);
+
 
   const login = async (email: string, password: string, remember: boolean = false) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -160,11 +226,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const refreshUser = async () => {
     if (!user?.id) return;
     const profile = await fetchUserProfile(user.id);
-    if (profile) setUser(profile);
+    if (profile) {
+      setUser(profile);
+      if (profile.org_id) fetchSubscription(profile.org_id);
+    }
   };
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, user, loading, login, loginWithOAuth, signUp, logout, refreshUser }}>
+    <AuthContext.Provider value={{ 
+      isAuthenticated, 
+      user, 
+      loading, 
+      login, 
+      loginWithOAuth, 
+      signUp, 
+      logout, 
+      refreshUser,
+      subscription,
+      subscriptionLoading,
+      refreshSubscription
+    }}>
       {children}
     </AuthContext.Provider>
   );
