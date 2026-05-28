@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
@@ -26,10 +26,13 @@ import {
   Sparkles,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/contexts/AuthContext";
+import { Loader2 } from "lucide-react";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-type PlanName = "Free" | "Pro" | "Business";
+type PlanName = "Free" | "Starter" | "Pro" | "Business";
 type PlanStatus = "Active" | "Trial" | "Canceled";
 
 interface Plan {
@@ -59,9 +62,20 @@ const plans: Plan[] = [
     name: "Free",
     price: "$0",
     priceNum: 0,
-    contactLimit: 500,
+    contactLimit: 50,
     campaignLimit: 3,
     callMinutes: 60,
+    prioritySupport: false,
+    advancedAnalytics: false,
+    icon: Zap,
+  },
+  {
+    name: "Starter",
+    price: "$29",
+    priceNum: 29,
+    contactLimit: 500,
+    campaignLimit: 10,
+    callMinutes: 500,
     prioritySupport: false,
     advancedAnalytics: false,
     icon: Zap,
@@ -70,9 +84,9 @@ const plans: Plan[] = [
     name: "Pro",
     price: "$79",
     priceNum: 79,
-    contactLimit: 10000,
+    contactLimit: 2000,
     campaignLimit: 50,
-    callMinutes: 5000,
+    callMinutes: 2000,
     prioritySupport: true,
     advancedAnalytics: true,
     icon: Sparkles,
@@ -81,9 +95,9 @@ const plans: Plan[] = [
     name: "Business",
     price: "$199",
     priceNum: 199,
-    contactLimit: 100000,
-    campaignLimit: 999,
-    callMinutes: 25000,
+    contactLimit: -1,
+    campaignLimit: -1,
+    callMinutes: 10000,
     prioritySupport: true,
     advancedAnalytics: true,
     icon: Building2,
@@ -117,6 +131,13 @@ function progressColor(pct: number): string {
 
 // A thin styled progress bar that supports color override
 function UsageBar({ value, max }: { value: number; max: number }) {
+  if (max === Infinity || max === -1) {
+    return (
+      <div className="relative h-2 w-full overflow-hidden rounded-full bg-secondary">
+        <div className="h-full w-full bg-primary rounded-full opacity-20" />
+      </div>
+    );
+  }
   const pct = Math.min(100, Math.round((value / max) * 100));
   const color = progressColor(pct);
   return (
@@ -129,6 +150,13 @@ function UsageBar({ value, max }: { value: number; max: number }) {
   );
 }
 
+const planIdMap: Record<string, string> = {
+  'Free': 'free',
+  'Starter': 'starter', 
+  'Pro': 'pro',
+  'Business': 'business'
+};
+
 const billingStatusVariant: Record<BillingRecord["status"], "success" | "warning" | "error"> = {
   paid: "success",
   pending: "warning",
@@ -139,9 +167,11 @@ const billingStatusVariant: Record<BillingRecord["status"], "success" | "warning
 
 export default function SubscriptionsPage() {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const [subData, setSubData] = useState<any>(null);
+  const [subLoading, setSubLoading] = useState(true);
 
   // Current plan state
-  const [currentPlan, setCurrentPlan] = useState<PlanName>("Pro");
   const [planStatus] = useState<PlanStatus>("Active");
   const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
@@ -150,14 +180,85 @@ export default function SubscriptionsPage() {
   const [successBanner, setSuccessBanner] = useState(false);
   const [billingPage, setBillingPage] = useState(1);
 
-  const planData = plans.find((p) => p.name === currentPlan)!;
-  const isFree = currentPlan === "Free";
+  async function fetchSubscription() {
+    if (!user?.org_id) return;
+    setSubLoading(true);
+    try {
+      const { data, error } = await supabase
+        .rpc('f_get_org_subscription_and_usage', { 
+          p_org_id: user.org_id 
+        });
+      if (error) throw error;
+      if (data && data.length > 0) setSubData(data[0]);
+    } catch (err) {
+      console.error('Failed to fetch subscription:', err);
+    } finally {
+      setSubLoading(false);
+    }
+  }
 
-  // Mock usage values
+  useEffect(() => {
+    fetchSubscription();
+
+    // Real-time updates when usage changes
+    if (!user?.org_id) return;
+    const channel = supabase
+      .channel('org_usage_changes')
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'org_usage',
+        filter: `org_id=eq.${user.org_id}`
+      }, () => {
+        fetchSubscription();
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [user?.org_id]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('success') === 'true') {
+      setSuccessBanner(true);
+      fetchSubscription();
+      // Clean up URL
+      window.history.replaceState({}, document.title, '/subscriptions');
+    }
+    if (params.get('cancelled') === 'true') {
+      toast({
+        title: "Upgrade cancelled",
+        description: "Your plan has not been changed.",
+      });
+      window.history.replaceState({}, document.title, '/subscriptions');
+    }
+  }, []);
+
+  if (subLoading) return (
+    <DashboardLayout title="Subscriptions">
+      <div className="flex items-center justify-center py-32">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    </DashboardLayout>
+  );
+
+  const currentPlanName = subData?.plan_name ?? 'Free';
+  const isFree = currentPlanName === 'Free';
+
+  // Real usage values
   const usage = {
-    contacts: { used: 8342, limit: planData.contactLimit },
-    runs: { used: 41, limit: planData.campaignLimit },
-    minutes: { used: 4120, limit: planData.callMinutes },
+    contacts: { 
+      used: subData?.contacts_count ?? 0, 
+      limit: subData?.max_contacts === -1 ? Infinity : (subData?.max_contacts ?? 50)
+    },
+    runs: { 
+      used: subData?.campaigns_count ?? 0, 
+      limit: subData?.max_campaigns === -1 ? Infinity : (subData?.max_campaigns ?? 3)
+    },
+    minutes: { 
+      used: subData?.call_minutes_used ?? 0, 
+      limit: subData?.max_call_minutes_per_month ?? 60
+    },
   };
 
   const contactsPct = Math.round((usage.contacts.used / usage.contacts.limit) * 100);
@@ -172,20 +273,60 @@ export default function SubscriptionsPage() {
     billingPage * BILLING_PAGE_SIZE
   );
 
-  function handleUpgrade(planName: PlanName) {
+  async function handleUpgrade(planName: PlanName) {
+    if (planName === 'Free') {
+      toast({
+        title: "Cannot downgrade to Free",
+        description: "Please cancel your subscription to return to the Free plan.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (!user?.org_id) return;
+
     setUpgradeTarget(planName);
     setUpgradeLoading(true);
-    setTimeout(() => {
-      setCurrentPlan(planName);
+
+    try {
+      const planId = planIdMap[planName];
+      
+      const { data, error } = await supabase.functions.invoke(
+        'create-checkout-session',
+        {
+          body: {
+            org_id: user.org_id,
+            plan_id: planId
+          }
+        }
+      );
+
+      if (error) throw error;
+
+      if (data?.url) {
+        // Redirect to Stripe checkout
+        window.location.href = data.url;
+      } else {
+        throw new Error('No checkout URL returned');
+      }
+    } catch (err: any) {
+      console.error('Upgrade error:', err);
+      toast({
+        title: "Upgrade failed",
+        description: err.message || "Something went wrong. Please try again.",
+        variant: "destructive"
+      });
       setUpgradeLoading(false);
-      setUpgradeModalOpen(false);
-      setSuccessBanner(true);
-    }, 1200);
+      setUpgradeTarget(null);
+    }
   }
 
   function handleCancelConfirm() {
     setCancelModalOpen(false);
-    toast({ title: "Subscription canceled", description: "Your plan will remain active until the end of the billing period." });
+    toast({ 
+      title: "Cancellation request received", 
+      description: "Full cancellation flow will be available when Stripe is fully configured." 
+    });
   }
 
   const billingColumns = [
@@ -235,7 +376,7 @@ export default function SubscriptionsPage() {
           <AlertBanner
             variant="success"
             title="Plan updated successfully"
-            message={`You are now on the ${currentPlan} plan.`}
+            message={`You are now on the ${currentPlanName} plan.`}
             dismissible
           />
         )}
@@ -245,13 +386,18 @@ export default function SubscriptionsPage() {
           <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
             <div>
               <div className="flex items-center gap-3 mb-1">
-                <h3 className="text-lg font-semibold">{currentPlan} Plan</h3>
+                <h3 className="text-lg font-semibold">{currentPlanName} Plan</h3>
                 <StatusBadge variant={planStatus === "Active" ? "success" : planStatus === "Trial" ? "info" : "error"}>
                   {planStatus}
                 </StatusBadge>
               </div>
               <p className="text-sm text-muted-foreground">
-                {isFree ? "Free forever" : `Renews on March 1, 2026 · ${planData.price}/mo`}
+                {isFree ? "Free forever" : `Renews on ${subData?.current_period_end 
+                  ? new Date(subData.current_period_end).toLocaleDateString('en-AU', { 
+                      day: 'numeric', month: 'long', year: 'numeric' 
+                    })
+                  : '—'
+                } · $${subData?.price_monthly ?? 0}/mo`}
               </p>
             </div>
             <div className="flex gap-2 shrink-0">
@@ -275,7 +421,7 @@ export default function SubscriptionsPage() {
                 <span className="text-sm font-medium">Contacts</span>
                 <span className={`text-xs font-medium tabular-nums ${usageColor(contactsPct)}`}>
                   {contactsPct >= 80 && contactsPct < 100 && <AlertTriangle className="h-3 w-3 inline mr-1" />}
-                  {usage.contacts.used.toLocaleString()} / {usage.contacts.limit.toLocaleString()}
+                  {usage.contacts.used.toLocaleString()} / {usage.contacts.limit === Infinity ? "Unlimited" : usage.contacts.limit.toLocaleString()}
                   {contactsPct >= 100 && " — Limit reached!"}
                   {contactsPct >= 80 && contactsPct < 100 && " — Nearing limit"}
                 </span>
@@ -286,10 +432,10 @@ export default function SubscriptionsPage() {
             {/* Campaign Runs */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
-                <span className="text-sm font-medium">Campaign Runs</span>
+                <span className="text-sm font-medium">Campaigns</span>
                 <span className={`text-xs font-medium tabular-nums ${usageColor(runsPct)}`}>
                   {runsPct >= 80 && runsPct < 100 && <AlertTriangle className="h-3 w-3 inline mr-1" />}
-                  {usage.runs.used} / {usage.runs.limit}
+                  {usage.runs.used} / {usage.runs.limit === Infinity ? "Unlimited" : usage.runs.limit}
                   {runsPct >= 100 && " — Limit reached!"}
                   {runsPct >= 80 && runsPct < 100 && " — Nearing limit"}
                 </span>
@@ -303,7 +449,7 @@ export default function SubscriptionsPage() {
                 <span className="text-sm font-medium">Call Minutes</span>
                 <span className={`text-xs font-medium tabular-nums ${usageColor(minutesPct)}`}>
                   {minutesPct >= 80 && minutesPct < 100 && <AlertTriangle className="h-3 w-3 inline mr-1" />}
-                  {usage.minutes.used.toLocaleString()} / {usage.minutes.limit.toLocaleString()} min
+                  {usage.minutes.used.toLocaleString()} / {usage.minutes.limit === Infinity ? "Unlimited" : usage.minutes.limit.toLocaleString()} min
                   {minutesPct >= 100 && " — Limit reached!"}
                   {minutesPct >= 80 && minutesPct < 100 && " — Nearing limit"}
                 </span>
@@ -359,7 +505,7 @@ export default function SubscriptionsPage() {
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 py-2">
             {plans.map((plan) => {
-              const isCurrent = plan.name === currentPlan;
+              const isCurrent = plan.name === currentPlanName;
               const isLoading = upgradeLoading && upgradeTarget === plan.name;
               const PlanIcon = plan.icon;
 
@@ -392,9 +538,9 @@ export default function SubscriptionsPage() {
 
                   <ul className="space-y-2 flex-1 mb-5">
                     {[
-                      `${plan.contactLimit >= 100000 ? "Unlimited" : plan.contactLimit.toLocaleString()} contacts`,
-                      `${plan.campaignLimit >= 999 ? "Unlimited" : plan.campaignLimit} campaigns`,
-                      `${plan.callMinutes >= 25000 ? "Unlimited" : plan.callMinutes.toLocaleString()} call minutes`,
+                      `${plan.contactLimit === -1 ? "Unlimited" : plan.contactLimit.toLocaleString()} contacts`,
+                      `${plan.campaignLimit === -1 ? "Unlimited" : plan.campaignLimit} campaigns`,
+                      `${plan.callMinutes === -1 ? "Unlimited" : plan.callMinutes.toLocaleString()} call minutes`,
                       plan.prioritySupport ? "Priority support" : "Email support",
                       plan.advancedAnalytics ? "Advanced analytics" : "Basic analytics",
                     ].map((feature) => (
@@ -409,7 +555,7 @@ export default function SubscriptionsPage() {
                     size="sm"
                     className="w-full"
                     variant={isCurrent ? "outline" : "default"}
-                    disabled={isCurrent || upgradeLoading}
+                    disabled={isCurrent || upgradeLoading || plan.name === 'Free'}
                     onClick={() => handleUpgrade(plan.name)}
                   >
                     {isLoading ? (
@@ -420,7 +566,7 @@ export default function SubscriptionsPage() {
                     ) : isCurrent ? (
                       "Current Plan"
                     ) : (
-                      `Switch to ${plan.name}`
+                      plan.name === 'Free' ? 'Contact Support' : `Switch to ${plan.name}`
                     )}
                   </Button>
                 </div>
@@ -436,7 +582,7 @@ export default function SubscriptionsPage() {
           <DialogHeader>
             <DialogTitle>Cancel Subscription</DialogTitle>
             <DialogDescription>
-              Are you sure you want to cancel your <span className="font-semibold text-foreground">{currentPlan}</span> plan?
+              Are you sure you want to cancel your <span className="font-semibold text-foreground">{currentPlanName}</span> plan?
               You'll retain access until the end of your current billing period.
             </DialogDescription>
           </DialogHeader>
