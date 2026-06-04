@@ -313,7 +313,9 @@ export default function SubscriptionsPage() {
       console.error('Upgrade error:', err);
       toast({
         title: "Upgrade failed",
-        description: err.message || "Something went wrong. Please try again.",
+        description: err.message?.includes('non-2xx') 
+          ? "Unable to connect to payment service. Please try again later."
+          : err.message || "Something went wrong. Please try again.",
         variant: "destructive"
       });
       setUpgradeLoading(false);
