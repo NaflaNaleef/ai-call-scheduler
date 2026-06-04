@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { supabase, REMEMBER_KEY } from "@/lib/supabase";
+import { useToast } from "@/hooks/use-toast";
 
 export interface AuthUser {
   id: string;
@@ -109,13 +110,82 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [subscription, setSubscription] = useState<OrgSubscription | null>(null);
   const [subscriptionLoading, setSubscriptionLoading] = useState(false);
 
+  const { toast } = useToast();
+
+  const prevUsageRef = React.useRef<{
+    contactsPct: number;
+    campaignsPct: number;
+    minutesPct: number;
+  } | null>(null);
+
+  const checkUsageAndNotify = (newSub: OrgSubscription) => {
+    const calc = (used: number, max: number) => {
+      if (max === -1) return 0;
+      return Math.round((used / max) * 100);
+    };
+
+    const contactsPct = calc(newSub.contacts_count, newSub.max_contacts);
+    const campaignsPct = calc(newSub.campaigns_count, newSub.max_campaigns);
+    const minutesPct = calc(newSub.call_minutes_used, newSub.max_call_minutes_per_month);
+
+    const prev = prevUsageRef.current;
+
+    // Call minutes warnings
+    if (minutesPct >= 100 && (!prev || prev.minutesPct < 100)) {
+      toast({
+        title: "⛔ Call minutes limit reached",
+        description: "You've used all your call minutes. Campaigns will be blocked until you upgrade.",
+        variant: "destructive",
+      });
+    } else if (minutesPct >= 80 && (!prev || prev.minutesPct < 80)) {
+      toast({
+        title: "⚠️ Call minutes at 80%",
+        description: `You've used ${newSub.call_minutes_used} of ${newSub.max_call_minutes_per_month} minutes this month.`,
+      });
+    }
+
+    // Contacts warnings
+    if (contactsPct >= 100 && (!prev || prev.contactsPct < 100)) {
+      toast({
+        title: "⛔ Contact limit reached",
+        description: "You've reached your contact limit. Upgrade your plan to add more contacts.",
+        variant: "destructive",
+      });
+    } else if (contactsPct >= 80 && (!prev || prev.contactsPct < 80)) {
+      toast({
+        title: "⚠️ Contacts at 80%",
+        description: `You've used ${newSub.contacts_count} of ${newSub.max_contacts} contacts.`,
+      });
+    }
+
+    // Campaigns warnings
+    if (campaignsPct >= 100 && (!prev || prev.campaignsPct < 100)) {
+      toast({
+        title: "⛔ Campaign limit reached",
+        description: "You've reached your campaign limit. Upgrade your plan to launch more campaigns.",
+        variant: "destructive",
+      });
+    } else if (campaignsPct >= 80 && (!prev || prev.campaignsPct < 80)) {
+      toast({
+        title: "⚠️ Campaigns at 80%",
+        description: `You've used ${newSub.campaigns_count} of ${newSub.max_campaigns} campaigns.`,
+      });
+    }
+
+    // Update ref with current percentages
+    prevUsageRef.current = { contactsPct, campaignsPct, minutesPct };
+  };
+
   const fetchSubscription = async (orgId: string) => {
     if (!orgId) return;
     setSubscriptionLoading(true);
     try {
       const { data, error } = await supabase
         .rpc('f_get_org_subscription_and_usage', { p_org_id: orgId });
-      if (!error && data?.[0]) setSubscription(data[0]);
+      if (!error && data?.[0]) {
+        setSubscription(data[0]);
+        checkUsageAndNotify(data[0]);
+      }
     } catch (err) {
       console.error('fetchSubscription error:', err);
     } finally {
