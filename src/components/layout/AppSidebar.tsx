@@ -16,6 +16,7 @@ import {
   List,
   FolderOpen,
   Building2,
+  Shield,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
@@ -27,6 +28,7 @@ interface NavItem {
   icon: React.ElementType;
   path?: string;
   children?: { label: string; icon: React.ElementType; path: string }[];
+  roles?: ("admin" | "member" | "super_admin")[];
 }
 
 const navItems: NavItem[] = [
@@ -43,7 +45,18 @@ const navItems: NavItem[] = [
   { label: "Campaign Runs", icon: Play, path: "/campaign-runs" },
   { label: "Call Logs", icon: PhoneCall, path: "/call-logs" },
   { label: "Profile", icon: UserCircle, path: "/profile" },
-  { label: "Subscriptions", icon: CreditCard, path: "/subscriptions" },
+  {
+    label: "Subscriptions",
+    icon: CreditCard,
+    path: "/subscriptions",
+    roles: ["admin", "super_admin"],
+  },
+  {
+    label: "Super Admin",
+    icon: Shield,
+    path: "/super-admin",
+    roles: ["super_admin"],
+  },
 ];
 
 function SidebarItem({
@@ -151,6 +164,13 @@ export function AppSidebar() {
   const { user, subscription } = useAuth();
   const [orgName, setOrgName] = useState<string>("");
 
+  const isSuperAdmin = user?.email === "superadmin@aialabs.com";
+  const userRole = (isSuperAdmin ? "super_admin" : (user?.role || "member")) as "admin" | "member" | "super_admin";
+  const visibleNavItems = navItems.filter(
+    (item) => !item.roles || item.roles.includes(userRole)
+  );
+  const isAdmin = userRole === "admin" || userRole === "super_admin";
+
   useEffect(() => {
     if (user?.org_id) {
       supabase
@@ -196,7 +216,7 @@ export function AppSidebar() {
       </div>
 
       <nav className="flex-1 py-4 space-y-1 px-2 overflow-y-auto">
-        {navItems.map((item) => (
+        {visibleNavItems.map((item) => (
           <SidebarItem
             key={item.label}
             item={item}
@@ -282,12 +302,49 @@ export function AppSidebar() {
             );
           })()}
 
-          <Link 
-            to="/subscriptions"
-            className="block text-[11px] text-primary hover:underline mt-1"
-          >
-            Manage plan →
-          </Link>
+          {/* Campaigns */}
+          {(() => {
+            const used = subscription.campaigns_count;
+            const max = subscription.max_campaigns;
+            const pct = max === -1 ? 0 : Math.round((used / max) * 100);
+            const isWarning = pct >= 80 && pct < 100;
+            const isLimit = pct >= 100;
+            return (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] text-sidebar-muted">
+                    Campaigns
+                  </span>
+                  <span className={`text-[11px] font-medium tabular-nums ${
+                    isLimit ? 'text-destructive' : 
+                    isWarning ? 'text-warning' : 
+                    'text-sidebar-muted'
+                  }`}>
+                    {max === -1 ? `${used} / ∞` : `${used} / ${max}`}
+                  </span>
+                </div>
+                <div className="h-1.5 w-full rounded-full bg-sidebar-accent overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${
+                      isLimit ? 'bg-destructive' : 
+                      isWarning ? 'bg-warning' : 
+                      'bg-primary'
+                    }`}
+                    style={{ width: max === -1 ? '10%' : `${Math.min(100, pct)}%` }}
+                  />
+                </div>
+              </div>
+            );
+          })()}
+
+          {isAdmin && (
+            <Link 
+              to="/subscriptions"
+              className="block text-[11px] text-primary hover:underline mt-1"
+            >
+              Manage plan →
+            </Link>
+          )}
         </div>
       )}
     </aside>
@@ -304,6 +361,12 @@ export function MobileSidebar({
   const location = useLocation();
   const { user } = useAuth();
   const [orgName, setOrgName] = useState<string>("");
+
+  const isSuperAdmin = user?.email === "superadmin@aialabs.com";
+  const userRole = (isSuperAdmin ? "super_admin" : (user?.role || "member")) as "admin" | "member" | "super_admin";
+  const visibleNavItems = navItems.filter(
+    (item) => !item.roles || item.roles.includes(userRole)
+  );
 
   useEffect(() => {
     if (user?.org_id) {
@@ -340,7 +403,7 @@ export function MobileSidebar({
           </div>
         </div>
         <nav className="flex-1 py-4 space-y-1 px-2 overflow-y-auto">
-          {navItems.map((item) => (
+          {visibleNavItems.map((item) => (
             <SidebarItem
               key={item.label}
               item={item}
