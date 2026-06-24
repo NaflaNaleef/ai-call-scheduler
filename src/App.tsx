@@ -18,6 +18,9 @@ import SubscriptionsPage from "./pages/Subscriptions";
 import GroupsPage from "./pages/Groups";
 import SuperAdminPage from "./pages/SuperAdmin";
 
+// Public pages
+import LandingPage from "./pages/Landing";
+
 // Public auth pages
 import SignInPage from "./pages/auth/SignIn";
 import SignUpPage from "./pages/auth/SignUp";
@@ -43,9 +46,12 @@ const App = () => (
             <Route path="/reset-password" element={<ResetPasswordPage />} />
             <Route path="/auth/callback" element={<AuthCallbackPage />} />
 
+            {/* Landing page — public */}
+            <Route path="/" element={<LandingPage />} />
+
             {/* Protected routes — with sidebar via DashboardLayout */}
             <Route
-              path="/"
+              path="/dashboard"
               element={
                 <ProtectedRoute>
                   <Index />
