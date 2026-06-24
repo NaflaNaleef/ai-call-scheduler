@@ -16,6 +16,7 @@ import CallLogsPage from "./pages/CallLogs";
 import ProfilePage from "./pages/Profile";
 import SubscriptionsPage from "./pages/Subscriptions";
 import GroupsPage from "./pages/Groups";
+import SuperAdminPage from "./pages/SuperAdmin";
 
 // Public auth pages
 import SignInPage from "./pages/auth/SignIn";
@@ -102,8 +103,16 @@ const App = () => (
             <Route
               path="/subscriptions"
               element={
-                <ProtectedRoute>
+                <ProtectedRoute roles={["admin", "super_admin"]}>
                   <SubscriptionsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/super-admin"
+              element={
+                <ProtectedRoute roles={["super_admin"]}>
+                  <SuperAdminPage />
                 </ProtectedRoute>
               }
             />

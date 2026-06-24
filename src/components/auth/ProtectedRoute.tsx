@@ -1,9 +1,31 @@
+import { useEffect } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { useToast } from "@/hooks/use-toast";
 
-export function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, loading } = useAuth();
+interface ProtectedRouteProps {
+  children: React.ReactNode;
+  roles?: ("admin" | "member" | "super_admin")[];
+}
+
+export function ProtectedRoute({ children, roles }: ProtectedRouteProps) {
+  const { isAuthenticated, loading, user } = useAuth();
   const location = useLocation();
+  const { toast } = useToast();
+
+  const isSuperAdmin = user?.email === "superadmin@aialabs.com";
+  const userRole = (isSuperAdmin ? "super_admin" : (user?.role || "member")) as "admin" | "member" | "super_admin";
+  const hasPermission = !roles || roles.includes(userRole);
+
+  useEffect(() => {
+    if (isAuthenticated && !loading && !hasPermission) {
+      toast({
+        title: "Access Denied",
+        description: "You don't have permission to access this page.",
+        variant: "destructive",
+      });
+    }
+  }, [isAuthenticated, loading, hasPermission, toast]);
 
   // Wait for the initial session check before making a routing decision
   if (loading) {
@@ -23,6 +45,10 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
   if (!isAuthenticated) {
     return <Navigate to="/sign-in" state={{ from: location }} replace />;
+  }
+
+  if (!hasPermission) {
+    return <Navigate to="/dashboard" replace />;
   }
 
   return <>{children}</>;
