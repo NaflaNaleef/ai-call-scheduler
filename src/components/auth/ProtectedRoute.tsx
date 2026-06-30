@@ -13,15 +13,8 @@ export function ProtectedRoute({ children, roles }: ProtectedRouteProps) {
   const location = useLocation();
   const { toast } = useToast();
 
-  //const isSuperAdmin = user?.email === "superadmin@aialabs.com";
-  const isSuperAdmin = user?.email === 'testuser@example.com'
+  const isSuperAdmin = user?.email === "testuser@example.com";
   const userRole = (isSuperAdmin ? "super_admin" : (user?.role || "member")) as "admin" | "member" | "super_admin";
-  console.log('DEBUG:', {
-    userEmail: user?.email,
-    isSuperAdmin,
-    userRole,
-    requiredRoles: roles
-  })
   const hasPermission = !roles || roles.includes(userRole);
 
   useEffect(() => {

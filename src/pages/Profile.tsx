@@ -9,7 +9,7 @@ import { useState } from "react";
 import {
   User, Mail, Phone, Shield, Eye, EyeOff, Loader2,
   Monitor, Smartphone, Globe, Clock, CheckCircle,
-  AlertTriangle, LogOut, Link2, Unlink, RefreshCw
+  AlertTriangle, LogOut, Link2, Unlink, RefreshCw, UserPlus
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
@@ -20,6 +20,9 @@ import {
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
+import {
+  Table, TableHeader, TableBody, TableHead, TableRow, TableCell,
+} from "@/components/ui/table";
 
 
 const MOCK_SESSIONS = [
@@ -113,6 +116,63 @@ export default function ProfilePage() {
   const [orgDraft, setOrgDraft] = useState({ name: "", email: "", timezone: "" });
   const [orgEditing, setOrgEditing] = useState(false);
   const [orgSaving, setOrgSaving] = useState(false);
+
+  const isAdmin = user?.role === "admin";
+
+  interface TeamMember {
+    id: string;
+    email: string;
+    first_name: string | null;
+    last_name: string | null;
+    role: string | null;
+    is_active: boolean;
+    created_at: string;
+  }
+  const [members, setMembers] = useState<TeamMember[]>([]);
+  const [membersLoading, setMembersLoading] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteSending, setInviteSending] = useState(false);
+
+  useEffect(() => {
+    if (!isAdmin || !user?.org_id) return;
+    setMembersLoading(true);
+    supabase
+      .from("users")
+      .select("id, email, first_name, last_name, role, is_active, created_at")
+      .eq("org_id", user.org_id)
+      .order("created_at", { ascending: true })
+      .then(({ data }) => {
+        setMembers((data as TeamMember[]) || []);
+        setMembersLoading(false);
+      });
+  }, [isAdmin, user?.org_id]);
+
+  const handleInvite = async () => {
+    if (!inviteEmail.trim()) return;
+    setInviteSending(true);
+    try {
+      const { error } = await supabase.functions.invoke("send-invite", {
+        body: { email: inviteEmail.trim() },
+      });
+      if (error) throw error;
+      toast({ title: "Invitation sent", description: `Invitation sent to ${inviteEmail.trim()}` });
+      setInviteOpen(false);
+      setInviteEmail("");
+    } catch (err: any) {
+      toast({ title: "Failed to send invitation", description: err.message || "An error occurred.", variant: "destructive" });
+    } finally {
+      setInviteSending(false);
+    }
+  };
+
+  const formatMemberDate = (dateStr: string) => {
+    try {
+      return new Date(dateStr).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+    } catch {
+      return dateStr;
+    }
+  };
 
   const hasChanges =
     draft.name !== profile.name ||
@@ -285,11 +345,11 @@ export default function ProfilePage() {
                         className={f.key === "email" && draft.email && !emailValid ? "border-destructive focus-visible:ring-destructive" : ""}
                       />
                     ) : (
-                      <p className="text-sm font-medium py-2">
+                      <div className="text-sm font-medium py-2">
                         {isRole ? (
                           <Badge className="bg-primary/10 text-primary border-primary/20 hover:bg-primary/10">{f.value}</Badge>
                         ) : f.value}
-                      </p>
+                      </div>
                     )}
                     {editing && f.key === "email" && draft.email && !emailValid && (
                       <p className="text-xs text-destructive">Please enter a valid email address.</p>
@@ -309,6 +369,7 @@ export default function ProfilePage() {
             <TabsTrigger value="sessions">Active Sessions</TabsTrigger>
             <TabsTrigger value="connections">Connected Accounts</TabsTrigger>
             <TabsTrigger value="activity">Activity Log</TabsTrigger>
+            {isAdmin && <TabsTrigger value="team">Team Members</TabsTrigger>}
           </TabsList>
 
           {/* Security Tab */}
@@ -439,10 +500,10 @@ export default function ProfilePage() {
                           <Icon className="h-4 w-4" />
                         </div>
                         <div>
-                          <p className="text-sm font-medium flex items-center gap-2">
+                          <div className="text-sm font-medium flex items-center gap-2">
                             {s.device}
                             {s.current && <Badge className="bg-accent/10 text-accent border-accent/20 hover:bg-accent/10 text-[10px] px-1.5 py-0">Current</Badge>}
-                          </p>
+                          </div>
                           <p className="text-xs text-muted-foreground">{s.ip} · {s.lastActive}</p>
                         </div>
                       </div>
@@ -528,6 +589,89 @@ export default function ProfilePage() {
               </div>
             </div>
           </TabsContent>
+
+          {/* Team Members Tab — admin only */}
+          {isAdmin && (
+            <TabsContent value="team" className="mt-4">
+              <div className="bg-card rounded-lg border border-border p-6 shadow-sm space-y-5">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-lg font-semibold">Team Members</h3>
+                    <p className="text-sm text-muted-foreground">People in your organisation.</p>
+                  </div>
+                  <Button size="sm" onClick={() => setInviteOpen(true)}>
+                    <UserPlus className="h-4 w-4 mr-1.5" /> Invite Member
+                  </Button>
+                </div>
+
+                <p className="text-xs text-muted-foreground">
+                  Invited members will receive an email with a link to set up their account and join your organisation automatically.
+                </p>
+
+                {membersLoading ? (
+                  <div className="flex justify-center py-10">
+                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-border overflow-hidden">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Name</TableHead>
+                          <TableHead>Email</TableHead>
+                          <TableHead>Role</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Joined</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {members.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                              No members found.
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          members.map((m) => {
+                            const name = [m.first_name, m.last_name].filter(Boolean).join(" ") || m.email;
+                            return (
+                              <TableRow key={m.id}>
+                                <TableCell className="font-medium">{name}</TableCell>
+                                <TableCell>{m.email}</TableCell>
+                                <TableCell>
+                                  <Badge
+                                    variant="outline"
+                                    className={m.role === "admin"
+                                      ? "border-primary/30 text-primary bg-primary/5"
+                                      : "border-border text-muted-foreground"}
+                                  >
+                                    {m.role || "member"}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell>
+                                  <Badge
+                                    variant="outline"
+                                    className={m.is_active
+                                      ? "border-green-500/30 text-green-600 bg-green-500/5"
+                                      : "border-destructive/30 text-destructive bg-destructive/5"}
+                                  >
+                                    {m.is_active ? "Active" : "Inactive"}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="text-muted-foreground text-sm">
+                                  {formatMemberDate(m.created_at)}
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </div>
+            </TabsContent>
+          )}
         </Tabs>
       </div>
 
@@ -580,6 +724,39 @@ export default function ProfilePage() {
             <Button variant="outline" onClick={() => setPwModal(false)} disabled={pwSaving}>Cancel</Button>
             <Button onClick={handleChangePw} disabled={!pwValid || pwSaving}>
               {pwSaving ? <><Loader2 className="h-4 w-4 animate-spin" /> Updating…</> : "Update Password"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Invite Member Dialog */}
+      <Dialog open={inviteOpen} onOpenChange={(o) => { setInviteOpen(o); if (!o) setInviteEmail(""); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Invite Team Member</DialogTitle>
+            <DialogDescription>
+              Send an invitation email to add a new member to your organisation.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="invite-email">Email address</Label>
+              <Input
+                id="invite-email"
+                type="email"
+                placeholder="colleague@example.com"
+                value={inviteEmail}
+                onChange={(e) => setInviteEmail(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") handleInvite(); }}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setInviteOpen(false); setInviteEmail(""); }} disabled={inviteSending}>
+              Cancel
+            </Button>
+            <Button onClick={handleInvite} disabled={!inviteEmail.trim() || inviteSending}>
+              {inviteSending ? <><Loader2 className="h-4 w-4 animate-spin" /> Sending…</> : "Send Invitation"}
             </Button>
           </DialogFooter>
         </DialogContent>
