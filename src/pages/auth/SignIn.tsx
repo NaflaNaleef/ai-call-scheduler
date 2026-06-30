@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Link, useNavigate, useLocation } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { Link, useNavigate, useLocation, useSearchParams } from "react-router-dom";
 import { Eye, EyeOff, LogIn } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,13 +7,27 @@ import { Label } from "@/components/ui/label";
 import { AlertBanner } from "@/components/ui/alert-banner";
 import { PublicLayout } from "@/components/layout/PublicLayout";
 import { useAuth } from "@/contexts/AuthContext";
+import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
 export default function SignInPage() {
   const { login, loginWithOAuth } = useAuth();
+  const { toast } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
   const from = (location.state as { from?: { pathname: string } })?.from?.pathname || "/";
+
+  const errorParam = searchParams.get('error');
+  useEffect(() => {
+    if (errorParam) {
+      toast({
+        title: "Link Expired",
+        description: errorParam,
+        variant: "destructive",
+      });
+    }
+  }, [errorParam]);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
