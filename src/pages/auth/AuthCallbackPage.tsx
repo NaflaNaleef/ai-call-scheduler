@@ -13,6 +13,17 @@ export default function AuthCallbackPage() {
     const type = hashParams.get('type');
     const code = params.get('code');
     const accessToken = hashParams.get('access_token');
+    const errorCode = hashParams.get('error_code');
+    const errorDescription = hashParams.get('error_description');
+
+    if (errorCode) {
+      // Invite/recovery link expired or already used
+      const message = errorDescription
+        ? decodeURIComponent(errorDescription.replace(/\+/g, ' '))
+        : 'This link is invalid or has expired.';
+      navigate(`/sign-in?error=${encodeURIComponent(message)}`, { replace: true });
+      return;
+    }
 
     if (code) {
       // OAuth flow (Google, Microsoft) — has ?code= param
@@ -20,7 +31,7 @@ export default function AuthCallbackPage() {
         .then(({ error }) => {
           if (error) {
             console.error("OAuth callback error:", error.message);
-            navigate("/sign-in?error=oauth_failed", { replace: true });
+            navigate(`/sign-in?error=${encodeURIComponent('Google sign-in failed. Please try again.')}`, { replace: true });
           } else {
             navigate("/dashboard", { replace: true });
           }
