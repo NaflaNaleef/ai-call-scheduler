@@ -32,7 +32,7 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { label: "Dashboard", icon: LayoutDashboard, path: "/" },
+  { label: "Dashboard", icon: LayoutDashboard, path: "/dashboard" },
   {
     label: "Contacts",
     icon: Users,
@@ -164,7 +164,7 @@ export function AppSidebar() {
   const { user, subscription } = useAuth();
   const [orgName, setOrgName] = useState<string>("");
 
-  const isSuperAdmin = user?.email === "superadmin@aialabs.com";
+  const isSuperAdmin = user?.email === "testuser@example.com";
   const userRole = (isSuperAdmin ? "super_admin" : (user?.role || "member")) as "admin" | "member" | "super_admin";
   const visibleNavItems = navItems.filter(
     (item) => !item.roles || item.roles.includes(userRole)
@@ -231,7 +231,7 @@ export function AppSidebar() {
           <p className="text-[10px] font-bold uppercase tracking-wider text-sidebar-muted">
             Usage
           </p>
-          
+
           {/* Call Minutes */}
           {(() => {
             const used = subscription.call_minutes_used;
@@ -245,21 +245,19 @@ export function AppSidebar() {
                   <span className="text-[11px] text-sidebar-muted">
                     Call Minutes
                   </span>
-                  <span className={`text-[11px] font-medium tabular-nums ${
-                    isLimit ? 'text-destructive' : 
-                    isWarning ? 'text-warning' : 
-                    'text-sidebar-muted'
-                  }`}>
+                  <span className={`text-[11px] font-medium tabular-nums ${isLimit ? 'text-destructive' :
+                    isWarning ? 'text-warning' :
+                      'text-sidebar-muted'
+                    }`}>
                     {max === -1 ? `${used} / ∞` : `${used} / ${max}`}
                   </span>
                 </div>
                 <div className="h-1.5 w-full rounded-full bg-sidebar-accent overflow-hidden">
                   <div
-                    className={`h-full rounded-full transition-all duration-500 ${
-                      isLimit ? 'bg-destructive' : 
-                      isWarning ? 'bg-warning' : 
-                      'bg-primary'
-                    }`}
+                    className={`h-full rounded-full transition-all duration-500 ${isLimit ? 'bg-destructive' :
+                      isWarning ? 'bg-warning' :
+                        'bg-primary'
+                      }`}
                     style={{ width: max === -1 ? '10%' : `${Math.min(100, pct)}%` }}
                   />
                 </div>
@@ -280,21 +278,19 @@ export function AppSidebar() {
                   <span className="text-[11px] text-sidebar-muted">
                     Contacts
                   </span>
-                  <span className={`text-[11px] font-medium tabular-nums ${
-                    isLimit ? 'text-destructive' : 
-                    isWarning ? 'text-warning' : 
-                    'text-sidebar-muted'
-                  }`}>
+                  <span className={`text-[11px] font-medium tabular-nums ${isLimit ? 'text-destructive' :
+                    isWarning ? 'text-warning' :
+                      'text-sidebar-muted'
+                    }`}>
                     {max === -1 ? `${used} / ∞` : `${used} / ${max}`}
                   </span>
                 </div>
                 <div className="h-1.5 w-full rounded-full bg-sidebar-accent overflow-hidden">
                   <div
-                    className={`h-full rounded-full transition-all duration-500 ${
-                      isLimit ? 'bg-destructive' : 
-                      isWarning ? 'bg-warning' : 
-                      'bg-primary'
-                    }`}
+                    className={`h-full rounded-full transition-all duration-500 ${isLimit ? 'bg-destructive' :
+                      isWarning ? 'bg-warning' :
+                        'bg-primary'
+                      }`}
                     style={{ width: max === -1 ? '10%' : `${Math.min(100, pct)}%` }}
                   />
                 </div>
@@ -315,21 +311,19 @@ export function AppSidebar() {
                   <span className="text-[11px] text-sidebar-muted">
                     Campaigns
                   </span>
-                  <span className={`text-[11px] font-medium tabular-nums ${
-                    isLimit ? 'text-destructive' : 
-                    isWarning ? 'text-warning' : 
-                    'text-sidebar-muted'
-                  }`}>
+                  <span className={`text-[11px] font-medium tabular-nums ${isLimit ? 'text-destructive' :
+                    isWarning ? 'text-warning' :
+                      'text-sidebar-muted'
+                    }`}>
                     {max === -1 ? `${used} / ∞` : `${used} / ${max}`}
                   </span>
                 </div>
                 <div className="h-1.5 w-full rounded-full bg-sidebar-accent overflow-hidden">
                   <div
-                    className={`h-full rounded-full transition-all duration-500 ${
-                      isLimit ? 'bg-destructive' : 
-                      isWarning ? 'bg-warning' : 
-                      'bg-primary'
-                    }`}
+                    className={`h-full rounded-full transition-all duration-500 ${isLimit ? 'bg-destructive' :
+                      isWarning ? 'bg-warning' :
+                        'bg-primary'
+                      }`}
                     style={{ width: max === -1 ? '10%' : `${Math.min(100, pct)}%` }}
                   />
                 </div>
@@ -338,7 +332,7 @@ export function AppSidebar() {
           })()}
 
           {isAdmin && (
-            <Link 
+            <Link
               to="/subscriptions"
               className="block text-[11px] text-primary hover:underline mt-1"
             >
@@ -362,7 +356,7 @@ export function MobileSidebar({
   const { user } = useAuth();
   const [orgName, setOrgName] = useState<string>("");
 
-  const isSuperAdmin = user?.email === "superadmin@aialabs.com";
+  const isSuperAdmin = user?.email === "testuser@example.com";
   const userRole = (isSuperAdmin ? "super_admin" : (user?.role || "member")) as "admin" | "member" | "super_admin";
   const visibleNavItems = navItems.filter(
     (item) => !item.roles || item.roles.includes(userRole)
