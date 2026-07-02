@@ -7,52 +7,69 @@
 ## Table of Contents
 
 1. [Getting Started](#1-getting-started)
+   - [The Landing Page](#the-landing-page)
    - [Creating Your Account](#creating-your-account)
    - [Logging In](#logging-in)
    - [Dashboard Overview](#dashboard-overview)
-2. [Managing Contacts](#2-managing-contacts)
+2. [User Roles](#2-user-roles)
+3. [Managing Contacts](#3-managing-contacts)
    - [Adding a Contact](#adding-a-contact)
    - [Editing a Contact](#editing-a-contact)
    - [Deactivating and Reactivating Contacts](#deactivating-and-reactivating-contacts)
    - [Organising Contacts into Groups](#organising-contacts-into-groups)
-3. [Creating Campaigns](#3-creating-campaigns)
+4. [Creating Campaigns](#4-creating-campaigns)
    - [Step 1 — Campaign Details](#step-1--campaign-details)
    - [Step 2 — AI Script](#step-2--ai-script)
    - [Step 3 — Schedule](#step-3--schedule)
    - [Step 4 — Data Collection](#step-4--data-collection)
    - [Step 5 — Select Contacts](#step-5--select-contacts)
-4. [Launching Campaigns](#4-launching-campaigns)
+5. [Launching Campaigns](#5-launching-campaigns)
    - [How to Launch](#how-to-launch)
    - [What Happens After Launch](#what-happens-after-launch)
-5. [Campaign Runs](#5-campaign-runs)
+6. [Campaign Runs](#6-campaign-runs)
    - [Viewing Campaign Runs](#viewing-campaign-runs)
    - [Understanding Run Statuses](#understanding-run-statuses)
    - [Retrying Failed Contacts](#retrying-failed-contacts)
-6. [Call Logs](#6-call-logs)
+7. [Call Logs](#7-call-logs)
    - [Viewing Call Logs](#viewing-call-logs)
    - [Call Statuses Explained](#call-statuses-explained)
    - [Viewing Transcripts and Recordings](#viewing-transcripts-and-recordings)
    - [Viewing Collected Data](#viewing-collected-data)
-7. [Subscriptions](#7-subscriptions)
+8. [Subscriptions](#8-subscriptions)
    - [Available Plans](#available-plans)
    - [Checking Your Usage](#checking-your-usage)
+   - [Call Minutes and Usage Limits](#call-minutes-and-usage-limits)
    - [Upgrading Your Plan](#upgrading-your-plan)
-8. [Profile & Organisation](#8-profile--organisation)
+9. [Profile & Organisation](#9-profile--organisation)
    - [Editing Your Profile](#editing-your-profile)
    - [Changing Your Password](#changing-your-password)
    - [Organisation Settings](#organisation-settings)
+   - [Team Members](#team-members)
 
 ---
 
 ## 1. Getting Started
 
+### The Landing Page
+
+When you visit the AI Call Scheduler URL, you will see the **landing page** — a public page that shows the platform's features, pricing plans, and sign-up options. You do not need to be logged in to view it.
+
+From the landing page you can:
+- Review **pricing plans** (Free, Starter, Pro, Business) before committing.
+- Click **Get Started Free** or **Sign Up** to create a new account.
+- Click **Sign In** if you already have an account.
+
+---
+
 ### Creating Your Account
 
-1. Visit the AI Call Scheduler sign-up page.
-2. Enter your **first name**, **last name**, **email address**, and a **password**.
+1. Visit the AI Call Scheduler sign-up page or click **Get Started Free** on the landing page.
+2. Enter your **first name**, **last name**, **email address**, and a **password** — or sign up using **Google** or **Microsoft**.
 3. Click **Sign Up**.
 4. Check your email for a verification link and click it to confirm your account.
 5. You will be taken to your dashboard automatically.
+
+Signing up creates a **new organisation** with you as the **admin**. You can then invite other team members from your Profile page.
 
 💡 **Tip:** Use a business email address so your organisation settings are easy to manage later.
 
@@ -69,6 +86,11 @@ If you have forgotten your password:
 1. Click **Forgot Password** on the login page.
 2. Enter your email address and click **Send Reset Link**.
 3. Check your inbox for the reset email and follow the link to choose a new password.
+
+**Sign in options:**
+- **Email and password** — Standard login using your registered address.
+- **Google** — Click "Continue with Google" to sign in with your Google account.
+- **Microsoft** — Click "Continue with Microsoft" to sign in with a Microsoft account.
 
 💡 **Tip:** You can also log in using a supported social login (e.g., Google) if your account was created that way.
 
@@ -102,7 +124,43 @@ After logging in you will land on the **Dashboard**. This page gives you a live 
 
 ---
 
-## 2. Managing Contacts
+## 2. User Roles
+
+Every account belongs to an **organisation**. Within that organisation, users are assigned a role that controls what they can see and do.
+
+---
+
+### Admin
+
+- Full access to all features in the platform.
+- Can manage subscriptions and billing (Subscriptions page).
+- Can invite new team members from **Profile → Team Members**.
+- Can see and manage all campaigns and contacts in the organisation.
+- Sees usage stats and a **Manage Plan** link in the sidebar.
+
+---
+
+### Member (Campaign Manager)
+
+- Can create and manage contacts.
+- Can create and launch campaigns.
+- Can view campaign runs and call logs.
+- Can view usage stats in the sidebar.
+- **Cannot** access the Subscriptions or billing page.
+- **Cannot** invite other members.
+- The **Team Members** tab is not shown on the Profile page.
+
+---
+
+### Super Admin *(Platform level — internal only)*
+
+- This role is not available to regular users.
+- Can view all organisations across the entire platform.
+- Accessed via a dedicated **Super Admin** page visible only to the platform's internal super admin account.
+
+---
+
+## 3. Managing Contacts
 
 Contacts are the people your AI campaigns will call. You can find them under **Contacts → All Contacts** in the left sidebar.
 
@@ -202,7 +260,7 @@ Groups let you target specific sets of contacts in a campaign. You can find Grou
 
 ---
 
-## 3. Creating Campaigns
+## 4. Creating Campaigns
 
 A **Campaign** is a set of instructions that tells the AI who to call, what to say, when to call, and what information to collect. Campaigns are created using a step-by-step wizard.
 
@@ -332,7 +390,7 @@ Click **Save Campaign** to save your campaign as a **Draft**.
 
 ---
 
-## 4. Launching Campaigns
+## 5. Launching Campaigns
 
 ### How to Launch
 
@@ -361,7 +419,7 @@ Each time the AI dials contacts, a **Campaign Run** is created. You can monitor 
 
 ---
 
-## 5. Campaign Runs
+## 6. Campaign Runs
 
 A **Campaign Run** is a single execution of a campaign — the AI working through its list of contacts and attempting calls. A campaign can have multiple runs (e.g., if contacts are retried, or if it is a recurring campaign with daily runs).
 
@@ -389,8 +447,21 @@ Inside a run's detail view you can see:
 | **Running** | The AI is actively placing calls right now. |
 | **Completed** | The run has finished — all contacts were attempted. |
 | **Scheduled** | The run is waiting for its start time. |
-| **Paused** | The run has been paused (recurring campaigns only). |
+| **Paused** | The run has been manually paused. |
+| **Blocked** | The run was stopped before any calls were made because your organisation's call minutes limit was reached. No calls were sent. See below. |
 | **Failed** | The run encountered an error and did not complete. |
+
+#### What to do when you see BLOCKED
+
+A **Blocked** run means the system checked your remaining call minutes before sending any calls and found the limit was already reached. **No calls were made.**
+
+- Go to **Subscriptions** and upgrade your plan to get more call minutes.
+- For **immediate** and **scheduled** campaigns: relaunch the campaign manually after upgrading.
+- For **recurring** campaigns: the next scheduled run will resume automatically after upgrading, or after your monthly minutes reset at the start of the next billing cycle.
+
+> **Note:** BLOCKED is different from PAUSED. PAUSED means you or an admin manually paused the campaign. BLOCKED means the system stopped it automatically because your minutes limit was reached.
+
+---
 
 **Contact statuses within a run:**
 
@@ -421,7 +492,7 @@ The system supports up to **3 call attempts** per contact per run (shown as "Att
 
 ---
 
-## 6. Call Logs
+## 7. Call Logs
 
 The **Call Logs** page gives you a record of every individual call attempt made by the AI across all campaigns.
 
@@ -478,7 +549,7 @@ If your campaign had **Data Collection** fields set up, the answers gathered dur
 
 ---
 
-## 7. Subscriptions
+## 8. Subscriptions
 
 The Subscriptions page is where you view your current plan, monitor your usage, and upgrade if needed.
 
@@ -514,14 +585,25 @@ The sidebar also shows a live usage summary at all times (bottom of the left men
 
 ---
 
-### What Happens When You Reach Your Limit
+### Call Minutes and Usage Limits
 
-**Call Minutes Exhausted:**
+#### What happens when call minutes run out
 
-- Any campaign that tries to launch will be blocked until your minutes reset or you upgrade.
-- Recurring campaigns will be paused automatically and resume on the next cycle after upgrading.
-- Immediate and Run Once campaigns will show as completed — you can retry them after upgrading.
-- Call minutes reset on the 1st of each month.
+The system checks your remaining call minutes **before** sending any calls to contacts. If your limit is exhausted:
+
+- The campaign run is marked **BLOCKED** — no calls are sent to any contacts.
+- The Campaign Runs page shows a warning message with a link to upgrade your plan.
+- **Recurring campaigns** — the next scheduled run will resume automatically after upgrading or after your monthly minutes reset at the start of the next billing cycle.
+- **Immediate and run-once campaigns** — must be manually relaunched after upgrading or after your monthly reset.
+
+#### Minutes are tracked in real time
+
+- Each call uses minutes based on actual call duration, rounded up to the nearest minute.
+- Your current usage is always visible in the sidebar (**Call Minutes** progress bar at the bottom of the left menu).
+- The bar turns **amber** at 80% usage and **red** when the limit is reached.
+- Call minutes reset on the **1st of each calendar month**.
+
+#### Other limits
 
 **Contact Limit Reached:**
 
@@ -553,7 +635,7 @@ The sidebar also shows a live usage summary at all times (bottom of the left men
 
 ---
 
-## 8. Profile & Organisation
+## 9. Profile & Organisation
 
 ---
 
@@ -599,6 +681,30 @@ Your **Organisation** is the account that all your campaigns, contacts, and data
 ⚠️ **Note:** The organisation timezone is important for **recurring campaigns**. If contacts are in different time zones, consider setting the organisation timezone to match your primary operating region, and use individual contact timezones for finer control.
 
 💡 **Tip:** Keeping your organisation name accurate helps identify your business on outbound calls and in your account settings.
+
+---
+
+### Team Members
+
+*(Admin only — this tab is not visible to members)*
+
+The **Team Members** tab on the Profile page lets you view everyone in your organisation and invite new people.
+
+**To invite a team member:**
+
+1. Go to **Profile** in the sidebar.
+2. Click the **Team Members** tab.
+3. Click **Invite Member**.
+4. Enter their email address and click **Send Invitation**.
+5. They will receive an email with an invite link.
+6. They click the link, set their password, and are automatically added to your organisation as a **member**.
+
+**Important notes:**
+
+- Only **admins** can send invitations.
+- Each email address can only belong to **one organisation** in the system. If you try to invite an email that already has an account, you will see an error message.
+- Invite links **expire** — if the link expires before the recipient uses it, send a new invitation from the same screen.
+- Invited members appear in the **Team Members list immediately** after the invite is sent (before they have accepted). Their account is active but shows no sign-in history until they log in for the first time.
 
 ---
 
