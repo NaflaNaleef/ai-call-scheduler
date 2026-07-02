@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, Link } from "react-router-dom";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { DataTable } from "@/components/ui/data-table";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -91,6 +91,7 @@ function mapRunStatus(status: string): "info" | "success" | "error" | "neutral" 
     case "COMPLETED": return "success";
     case "FAILED": return "error";
     case "PAUSED": return "warning";
+    case "BLOCKED": return "warning";
     default: return "neutral";
   }
 }
@@ -131,6 +132,9 @@ const DRAWER_PAGE_SIZE = 5;
 export default function CampaignRunsPage() {
   const { user } = useAuth();
   const location = useLocation();
+
+  const isMinutesBlocked = (run: any) =>
+    run.status?.toUpperCase() === 'BLOCKED';
 
   const [runs, setRuns] = useState<CampaignRun[]>([]);
   const [loading, setLoading] = useState(true);
@@ -631,6 +635,8 @@ export default function CampaignRunsPage() {
                 <SelectItem value="COMPLETED">Completed</SelectItem>
                 <SelectItem value="DRAFT">Draft</SelectItem>
                 <SelectItem value="LOCKED">Locked</SelectItem>
+                <SelectItem value="PAUSED">Paused</SelectItem>
+                <SelectItem value="BLOCKED">Blocked</SelectItem>
               </SelectContent>
             </Select>
 
@@ -692,7 +698,7 @@ export default function CampaignRunsPage() {
 
                         if (row.type === 'flat') {
                           const chainIds = getChainRunIds(item.id, runs);
-                          const latestRun = runs.filter(r => chainIds.includes(r.id)).sort((a,b) => b.attemptNumber - a.attemptNumber)[0] || item;
+                          const latestRun = runs.filter(r => chainIds.includes(r.id)).sort((a, b) => b.attemptNumber - a.attemptNumber)[0] || item;
                           displayStatus = latestRun.status;
                           displayStartedAt = latestRun.startedAt;
                         }
@@ -729,6 +735,14 @@ export default function CampaignRunsPage() {
                             </td>
                             <td className="px-4 py-3">
                               <StatusBadge variant={mapRunStatus(displayStatus)}>{displayStatus.toLowerCase()}</StatusBadge>
+                              {isMinutesBlocked(item) && (
+                                <div className="mt-1 text-[11px] text-warning leading-tight max-w-[200px]">
+                                  Call minutes limit reached.{' '}
+                                  {item.scheduleType === 'recurring'
+                                    ? 'Will resume after upgrading.'
+                                    : 'Upgrade your plan to relaunch.'}
+                                </div>
+                              )}
                             </td>
                             {isChild && item.status.toUpperCase() === 'PAUSED' ? (
                               <td colSpan={2} className="px-4 py-3 text-muted-foreground italic text-xs">
@@ -834,9 +848,23 @@ export default function CampaignRunsPage() {
                         {activeRun.campaignName}
                       </SheetDescription>
                     </div>
-                    <StatusBadge variant={mapRunStatus(activeRun.status)}>
-                      {activeRun.status.toLowerCase()}
-                    </StatusBadge>
+                    <div className="flex flex-col items-end">
+                      <StatusBadge variant={mapRunStatus(activeRun.status)}>
+                        {activeRun.status.toLowerCase()}
+                      </StatusBadge>
+                      {isMinutesBlocked(activeRun) && (
+                        <div className="mt-1 text-xs text-warning text-right max-w-[200px]">
+                          Call minutes limit reached.{' '}
+                          {activeRun.scheduleType === 'recurring'
+                            ? 'Will resume automatically after upgrading.'
+                            : 'Upgrade your plan to relaunch this campaign.'}
+                          {' '}
+                          <Link to="/subscriptions" className="underline font-medium">
+                            Manage plan →
+                          </Link>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </SheetHeader>
 
