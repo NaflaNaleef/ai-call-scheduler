@@ -17,6 +17,7 @@ export interface OrgSubscription {
   plan_id: string;
   plan_name: string;
   price_monthly: number;
+  stripe_customer_id: string | null;
   status: string;
   max_contacts: number;
   max_campaigns: number;

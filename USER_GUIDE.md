@@ -158,6 +158,15 @@ Every account belongs to an **organisation**. Within that organisation, users ar
 - Can view all organisations across the entire platform.
 - Accessed via a dedicated **Super Admin** page visible only to the platform's internal super admin account.
 
+The Super Admin page supports editing organisation details. Click the **Edit** button on any organisation row to:
+
+- Change the **organisation name**.
+- Override the **plan** (database only — does not affect billing).
+- **Activate or deactivate** the organisation (inactive orgs cannot log in).
+- **Reset usage counters** to zero (use only to correct billing errors or reset demo accounts).
+
+> **Note:** Plan changes via Super Admin are for manual corrections only. They do not affect Stripe billing — the client's subscription in Stripe remains unchanged.
+
 ---
 
 ## 3. Managing Contacts
@@ -585,6 +594,21 @@ The sidebar also shows a live usage summary at all times (bottom of the left men
 
 ---
 
+### How Call Minutes Work
+
+Each plan includes a set number of call minutes per month. Minutes are counted based on actual call duration, rounded up to the nearest minute.
+
+| Plan | Included Minutes | What Happens When Exhausted |
+|---|---|---|
+| **Free** | 60 min/month | Campaigns blocked — unless you have a card on file, in which case overage is charged at **$1.00/min** (billed monthly) |
+| **Starter** | 500 min/month | Campaigns blocked until next billing cycle or plan upgrade |
+| **Pro** | 2,000 min/month | Campaigns blocked until next billing cycle or plan upgrade |
+| **Business** | 10,000 min/month | Campaigns blocked until next billing cycle or plan upgrade |
+
+💡 **Free plan tip:** Add a payment method to keep calling beyond your 60 included minutes. You will only be charged for what you use, invoiced at the end of the month. See [Adding a Payment Method (Free Plan)](#adding-a-payment-method-free-plan) below.
+
+---
+
 ### Call Minutes and Usage Limits
 
 #### What happens when call minutes run out
@@ -617,6 +641,34 @@ The system checks your remaining call minutes **before** sending any calls to co
 
 ---
 
+### Adding a Payment Method (Free Plan)
+
+Free plan users can keep making calls beyond their 60 included minutes by adding a credit or debit card. You are only charged for actual usage — there is no monthly subscription fee.
+
+**When a payment method is required:**
+
+If you are on the Free plan and your call minutes are exhausted, the Launch button on any campaign will prompt you to add a card instead of launching immediately.
+
+**Steps to add a card:**
+
+1. Click **Launch** on any campaign in your Campaigns list.
+2. A dialog will appear: **Add Payment Method**.
+3. Enter your card details (card number, expiry, CVC).
+4. Click **Save Card**.
+5. Your card is saved securely via Stripe — no charge is made at this point.
+6. Click **Launch** again — your campaign will now proceed.
+
+**Billing:**
+
+- You are charged **$1.00 per minute** for calls beyond your included 60 minutes.
+- Usage is reported in real time after each call.
+- You will receive a monthly invoice from Stripe at the end of each billing period.
+- The invoice shows your total overage usage for the month.
+
+⚠️ **Note:** Your card details are never stored on our servers. All card handling is done securely by Stripe.
+
+---
+
 ### Upgrading Your Plan
 
 1. Go to **Subscriptions** in the sidebar.
@@ -630,6 +682,10 @@ The system checks your remaining call minutes **before** sending any calls to co
 - Date
 - Amount
 - Status: **Paid**, **Pending**, or **Failed**
+
+For paid plan subscribers, each monthly invoice includes your **plan subscription fee** plus any **call minute overage** charges for that period.
+
+For Free plan users with a card on file, your monthly invoice covers only your **call minute overage** at $1.00/min — there is no base subscription charge.
 
 ⚠️ **Note:** If a payment fails, your plan may revert to the previous tier. Check for a **Failed** status in your billing history and update your payment details if needed.
 
@@ -705,6 +761,58 @@ The **Team Members** tab on the Profile page lets you view everyone in your orga
 - Each email address can only belong to **one organisation** in the system. If you try to invite an email that already has an account, you will see an error message.
 - Invite links **expire** — if the link expires before the recipient uses it, send a new invitation from the same screen.
 - Invited members appear in the **Team Members list immediately** after the invite is sent (before they have accepted). Their account is active but shows no sign-in history until they log in for the first time.
+
+---
+
+### Revoking a Pending Invitation
+
+If a team member has not yet accepted their invitation, you can cancel it:
+
+1. Go to **Profile → Team Members**.
+2. Find the member showing a **Pending** badge.
+3. Click the **Revoke** button.
+4. Confirm in the dialog.
+
+The invite link stops working immediately. You can re-invite the same email address at any time.
+
+---
+
+### Removing a Team Member
+
+To remove an active member from your organisation:
+
+1. Go to **Profile → Team Members**.
+2. Find the member showing an **Active** badge.
+3. Click the **Remove** button.
+4. Confirm in the dialog.
+
+The member loses access immediately on their next page navigation. Their account is not deleted — you can re-add them later by inviting the same email address again.
+
+⚠️ **Note:** Admin accounts cannot be removed.
+
+---
+
+### Re-adding a Removed Member
+
+If you previously removed a member and want to restore their access:
+
+1. Go to **Profile → Team Members → Invite Member**.
+2. Enter their email address.
+3. Click **Send Invitation**.
+
+They are reactivated immediately with no new email required — they can log in straight away using their existing password.
+
+---
+
+### Member Status Badges
+
+The Team Members table shows three status types:
+
+| Badge | Colour | Meaning |
+|---|---|---|
+| **Active** | Green | Member has accepted their invite and can log in. |
+| **Pending** | Amber | Invite sent but not yet accepted. You can revoke this at any time. |
+| **Removed** | Grey | Member was removed by an admin. Can be re-added via invite. |
 
 ---
 

@@ -21,6 +21,7 @@ import {
   ChevronLeft, ChevronRight, CheckCircle2, Clock, PlayCircle, PauseCircle,
   FileEdit, X, Target, Rocket, AlertCircle, Database, ListPlus, ExternalLink,
 } from "lucide-react";
+import { AddPaymentMethodDialog } from "@/components/billing/AddPaymentMethodDialog";
 import { useState, useEffect, useRef, useCallback, memo, Fragment } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
@@ -894,6 +895,7 @@ function CreateCampaignModal({ open, onClose, onCreate, preselectedGroup }: Crea
 
 function CampaignDetailDrawer({
   campaign: listCampaign, open, onClose, onRefresh, highlightLaunch = false, callMinutesExhausted = false,
+  needsPaymentMethod = false, onNeedsPaymentMethod,
 }: {
   campaign: Campaign | null;
   open: boolean;
@@ -901,6 +903,8 @@ function CampaignDetailDrawer({
   onRefresh: () => void;
   highlightLaunch?: boolean;
   callMinutesExhausted?: boolean;
+  needsPaymentMethod?: boolean;
+  onNeedsPaymentMethod?: () => void;
 }) {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -1047,7 +1051,7 @@ function CampaignDetailDrawer({
   const isDraft = status === "DRAFT";
   const hasContacts = listCampaign.totalRecipients > 0;
   const hasFields = fields.length > 0;
-  const canLaunch = isDraft && hasContacts && !activeRun && !launchSuccess && !callMinutesExhausted;
+  const canLaunch = isDraft && hasContacts && !activeRun && !launchSuccess && (!callMinutesExhausted || needsPaymentMethod);
 
   const groupsLinkedCount = loading ? "..." : (fullCampaign?.contact_group_ids?.length ?? 0);
   const directContactsCount = loading ? "..." : (fullCampaign?.target_contact_ids?.length ?? 0);
@@ -1341,7 +1345,7 @@ function CampaignDetailDrawer({
                     </div>
                   )}
 
-                  {callMinutesExhausted && (
+                  {callMinutesExhausted && !needsPaymentMethod && (
                     <div className="flex items-start gap-2 p-3 rounded-lg border border-destructive/20 bg-destructive/10">
                       <AlertCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
                       <p className="text-xs text-destructive">
@@ -1350,7 +1354,20 @@ function CampaignDetailDrawer({
                     </div>
                   )}
 
-                  <Button className="w-full" disabled={!canLaunch || launchLoading} onClick={openReviewModal}>
+                  {needsPaymentMethod && (
+                    <div className="flex items-start gap-2 p-3 rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800">
+                      <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                      <p className="text-xs text-amber-700 dark:text-amber-400">
+                        Add a payment method to make calls at $1.00/min, billed monthly.
+                      </p>
+                    </div>
+                  )}
+
+                  <Button
+                    className="w-full"
+                    disabled={!canLaunch || launchLoading}
+                    onClick={() => needsPaymentMethod ? onNeedsPaymentMethod?.() : openReviewModal()}
+                  >
                     <Rocket className="h-4 w-4 mr-2" />
                     {launchLoading ? "Launching..." : "Launch Campaign Run"}
                   </Button>
@@ -2071,8 +2088,15 @@ export default function CampaignsPage() {
     subscription.max_campaigns === -1 || 
     subscription.campaigns_count < subscription.max_campaigns;
 
-  const callMinutesExhausted = subscription && 
+  const callMinutesExhausted = subscription &&
     subscription.call_minutes_used >= subscription.max_call_minutes_per_month;
+
+  const needsPaymentMethod =
+    subscription?.plan_id === 'free' &&
+    !subscription?.stripe_customer_id &&
+    !!callMinutesExhausted;
+
+  const [showAddCard, setShowAddCard] = useState(false);
 
   const callMinutesWarning = subscription &&
     subscription.call_minutes_used >= subscription.max_call_minutes_per_month * 0.8 &&
@@ -2343,6 +2367,14 @@ export default function CampaignsPage() {
         onRefresh={fetchCampaigns}
         highlightLaunch={shouldHighlightLaunch}
         callMinutesExhausted={callMinutesExhausted}
+        needsPaymentMethod={needsPaymentMethod}
+        onNeedsPaymentMethod={() => setShowAddCard(true)}
+      />
+
+      <AddPaymentMethodDialog
+        open={showAddCard}
+        onOpenChange={setShowAddCard}
+        onSuccess={() => window.location.reload()}
       />
 
       <GenericConfirmDialog

@@ -725,7 +725,7 @@ ai_webhooks            → USING false (service role only)
 Runtime:    Deno (TypeScript)
 Platform:   Supabase Edge Functions
 Auth:       Service Role key (bypasses RLS)
-Total:      5 active edge functions
+Total:      7 active edge functions
 ```
 
 ### Function 1 — `prepare-campaign-calls`
@@ -777,6 +777,8 @@ FAILED    → all other cases
 → Update campaign_run counters
 → If calls_pending = 0 → mark run COMPLETED
 → Call f_increment_usage (calls + minutes)
+→ If org has stripe_metered_item_id set → report usage to Stripe
+  (non-fatal: logged but does not fail webhook processing)
 → Save audit log to ai_webhooks
 ```
 
@@ -802,20 +804,63 @@ FAILED    → all other cases
 
 **Known behaviour:** Supabase creates the `auth.users` row immediately when the invite is sent (not when accepted). The user appears in the `users` table before accepting — `last_sign_in_at` is null until they actually log in.
 
+**Re-invite behaviour:** If the invited email belongs to a soft-deleted member of the same org (is_active = false), the function reactivates them (sets is_active = true) instead of sending a new invite email. Returns `reactivated: true` in the response.
+
 ---
 
-### Function 4 — `create-checkout-session`
+### Function 4 — `manage-member`
 
-**Purpose:** Creates Stripe checkout session for plan upgrades.
+**Purpose:** Handles two team member management actions for org admins.
 
-**Triggered by:** Frontend (upgrade button click)
+**Triggered by:** Frontend (Profile → Team Members → Revoke or Remove button)
+
+**Actions:**
+
+```
+revoke:
+  Cancels a pending invitation.
+  Deletes from public.users first, then calls
+  supabaseAdmin.auth.admin.deleteUser() to remove from auth.users entirely.
+  This invalidates the invite token immediately.
+  The email is freed and can be re-invited.
+
+remove:
+  Soft-deletes an active member.
+  Sets public.users.is_active = false.
+  Calls supabaseAdmin.auth.admin.signOut(id, 'global') to invalidate
+  all active sessions.
+  Auth account is preserved — member can be re-activated by re-inviting
+  the same email (send-invite detects the soft-deleted record and
+  reactivates instead of sending a new invite email).
+```
+
+**Security checks:**
+```
+- Caller must be org admin
+- Target must be in the same org
+- Cannot remove another admin
+- Cannot remove yourself
+```
+
+**Request body:** `{ action, user_id, auth_user_id }`
+
+**Security:** Caller must have role = 'admin'. Service Role key used server-side only — never exposed to frontend.
+
+---
+
+### Function 5 — `create-setup-intent`
+
+**Purpose:** Creates a Stripe SetupIntent so a free plan user can save a card without an upfront charge.
+
+**Triggered by:** Frontend (AddPaymentMethodDialog — when free plan user tries to launch a campaign with exhausted minutes)
 
 **Flow:**
 ```
-→ Fetch plan stripe_price_id
-→ Create/reuse Stripe customer
-→ Create checkout session (AUD, subscription mode)
-→ Return checkout URL to frontend
+→ Look up or create Stripe customer for the org
+→ Save stripe_customer_id to org_subscriptions
+→ Create Stripe SetupIntent
+→ Return client_secret to frontend
+→ Frontend uses Stripe Elements to collect card and confirm setup
 ```
 
 **CORS Headers required:**
@@ -823,7 +868,31 @@ FAILED    → all other cases
 authorization, x-client-info, apikey, content-type
 ```
 
-### Function 5 — `stripe-webhook`
+---
+
+### Function 6 — `create-checkout-session`
+
+**Purpose:** Creates Stripe checkout session for plan upgrades.
+
+**Triggered by:** Frontend (upgrade button click)
+
+**Flow:**
+```
+→ Fetch plan stripe_price_id and stripe_metered_price_id
+→ Create/reuse Stripe customer
+→ Create checkout session (AUD, subscription mode)
+  with two line items: flat recurring price + metered usage price
+→ Return checkout URL to frontend
+```
+
+**Saves on completion:** `stripe_metered_item_id` (subscription item ID for the metered price) is captured in `stripe-webhook` on `checkout.session.completed` and stored in `org_subscriptions`. Used by `process-call-webhook` to report per-call usage to Stripe.
+
+**CORS Headers required:**
+```
+authorization, x-client-info, apikey, content-type
+```
+
+### Function 7 — `stripe-webhook`
 
 **Purpose:** Handles Stripe payment events.
 
@@ -832,6 +901,7 @@ authorization, x-client-info, apikey, content-type
 **Events handled:**
 ```
 checkout.session.completed  → update plan + save customer IDs
+                              + save stripe_metered_item_id from subscription items
 invoice.payment_succeeded   → reset usage + resume campaigns
 invoice.payment_failed      → mark as past_due
 customer.subscription.deleted → downgrade to free
@@ -966,6 +1036,8 @@ Naming:    f_ prefix convention
 | f_create_organization | p_clerk_org_id, p_name, p_email | Creates org. Called by handle_new_user trigger. |
 | f_get_organizations | none | Returns current user's org only (JWT filtered). |
 | f_super_admin_get_all_orgs | none | SECURITY DEFINER. Checks caller email = `superadmin@aialabs.com`. Returns all orgs across the platform with flattened usage and subscription data. Used by Super Admin page for cross-org platform visibility. |
+| f_super_admin_update_org | p_org_id uuid, p_name text, p_plan_id text, p_is_active boolean, p_reset_usage boolean | SECURITY DEFINER. Verifies caller email = `superadmin@aialabs.com`. Updates org name and is_active in organizations table, plan_id in org_subscriptions, and optionally resets all org_usage counters to 0 when p_reset_usage = true. Database only — does not affect Stripe. EXECUTE revoked from anon. |
+| f_get_org_members_with_status | p_org_id uuid | Returns org members joined with auth.users. Returns: id, auth_user_id, email, first_name, last_name, role, is_active, created_at, last_sign_in_at, invite_status ('pending'/'active'/'inactive'). invite_status is 'pending' when last_sign_in_at IS NULL, 'inactive' when is_active = false, 'active' otherwise. EXECUTE revoked from anon. |
 | f_get_organization_by_id | p_id | Single org. |
 | f_update_organization | p_id, p_name, p_email, p_timezone | Updates active org. |
 | f_deactivate_organization | p_id | Deactivates org. |
@@ -982,7 +1054,7 @@ Naming:    f_ prefix convention
 | Function | Arguments | Purpose |
 |---|---|---|
 | f_get_org_subscription_and_usage | p_org_id | Complete plan + usage data. Live counts for contacts and campaigns. |
-| f_check_org_limit | p_org_id, p_action | Checks if action allowed. Actions: add_contact, add_campaign, make_call. |
+| f_check_org_limit | p_org_id, p_action | Checks if action allowed. Actions: add_contact, add_campaign, make_call. For make_call: free plan with no stripe_customer_id → blocked at minute limit; free plan with stripe_customer_id (card on file) → allowed beyond limit at PAYG rate; paid plans → always allowed up to their limit. |
 | f_increment_usage | p_org_id, p_calls_made, p_call_minutes, p_contacts, p_campaigns | Atomically increments usage. Upsert pattern. |
 
 ### Trigger Functions
@@ -1273,6 +1345,8 @@ Database:   No automated rollback — keep rollback SQL ready
 | 11 | Campaigns usage indicator missing from sidebar | Added a third progress bar (Campaigns) to `AppSidebar`, matching the existing Call Minutes / Contacts style and colour thresholds. `MobileSidebar` intentionally left unchanged. |
 | 12 | Call minutes enforcement gap — campaigns could continue sending calls after limit exhausted | FIXED: `prepare-campaign-calls` now calls `f_check_org_limit` before sending any batch to Bland AI. If minutes are exhausted, run is set to `BLOCKED` (not `PAUSED` or `COMPLETED`), non-recurring campaigns also get `campaign.status = PAUSED`, and a 403 with `{ blocked: true, reason }` is returned. |
 | 13 | Bland AI NO_ANSWER classification matched "no answer" string that Bland never actually sends | FIXED: `process-call-webhook` now correctly matches `"temporarily unavailable"` (Bland AI's actual error string for unanswered calls). BUSY continues to match `"busy"` correctly. |
+| 27 | Team members UI | Implemented: Team Members tab in Profile page (admin only) with pending/active/inactive status, invite sending, revoke pending invitations, remove active members, and reactivation via re-invite. Managed via `f_get_org_members_with_status` RPC and `manage-member` edge function. |
+| 28 | Call minutes enforcement updated for metered billing (free plan PAYG) | FIXED: `f_check_org_limit` now allows free plan orgs with a `stripe_customer_id` on file to exceed their included 60 min/month at $1.00/min (PAYG). `process-call-webhook` reports per-call usage to Stripe when `stripe_metered_item_id` is set. Free plan orgs with no card are still blocked at the limit. Card collection handled by `create-setup-intent` edge function and `AddPaymentMethodDialog` component. |
 
 **Verification query used for #7 and #8 (re-run if auditing function grants again):**
 ```sql
@@ -1331,7 +1405,7 @@ AND grantee IN ('anon', 'authenticated');
 
 | # | Feature | Estimated Effort | Notes |
 |---|---|---|---|
-| 27 | Team members UI | 1 week | Plans table already has `max_team_members`; not yet enforced anywhere — needs a seat-limit check similar to `f_check_org_limit`. |
+| ~~27~~ | ~~Team members UI~~ | ~~1 week~~ | ~~Resolved — see Resolved #27 above.~~ |
 | 28 | API gateway for external access | 3-4 days | Confirmed real requirement: Intellistrata (first B2B client) needs API access to create campaigns/contacts and launch calls for single or bulk recipients programmatically, as part of their debt recovery workflow (alongside existing post/email/SMS channels). |
 | 29 | Outbound webhook support (event notifications to client URLs) | 1-2 days, on top of #28 | Requested alongside API gateway: ability to register a target URL (Intellistrata's or any third party's) that gets called when events occur (e.g. call completed). Needs a `webhook_subscriptions` table, signed payloads (HMAC), and a retry/backoff policy for failed deliveries — can reuse the `ai_webhooks` audit-log pattern. |
 | 30 | Recording retention policy | 1 day | |
@@ -1379,7 +1453,23 @@ member
 | ProtectedRoute | `roles` prop passed to route; redirects to `/dashboard` if unauthorised |
 | send-invite edge function | Checks `user.role === 'admin'` before proceeding |
 | f_super_admin_get_all_orgs | Checks `auth.email() = 'superadmin@aialabs.com'` inside SECURITY DEFINER function |
+| f_super_admin_update_org | Checks `auth.email() = 'superadmin@aialabs.com'` inside SECURITY DEFINER function |
 | RLS policies | Enforce org-level isolation for all non-super-admin data access |
+
+### Super Admin Page Capabilities (Editable)
+
+```
+Org name        → updates organizations.name
+Plan override   → updates org_subscriptions.plan_id
+                  Database only — does not affect Stripe billing
+Active toggle   → updates organizations.is_active
+                  All orgs shown in the table regardless of active status
+Reset usage     → zeroes org_usage counters (calls_made, call_minutes_used,
+                  contacts_count, campaigns_count)
+                  Used for billing error corrections and demo resets
+```
+
+All edits go through `f_super_admin_update_org` (SECURITY DEFINER RPC) to bypass RLS.
 
 ---
 
@@ -1424,7 +1514,111 @@ This is a Supabase platform behaviour, not a bug.
 | Expired or already-used invite token | Supabase returns `error_code` in hash → AuthCallbackPage detects it → redirects to `/sign-in?error=<message>` → SignIn page shows destructive "Link Expired" toast |
 | Non-admin tries to invite | send-invite returns 403; frontend shows error toast |
 
+### Revoking a Pending Invitation
+
+Admin clicks Revoke on a pending member in Profile → Team Members. Calls `manage-member` edge function with `action='revoke'`. Deletes from `public.users` and `auth.users`. Invite link immediately becomes invalid (token no longer exists). Email is freed — admin can re-invite the same address.
+
+### Removing an Active Member
+
+Admin clicks Remove on an active member. Calls `manage-member` with `action='remove'`. Sets `is_active = false` in `public.users`. Calls `signOut('global')` to invalidate sessions. Member is signed out on their next page navigation (AuthContext checks `is_active` on every auth state change and ProtectedRoute checks on every route navigation). Auth account preserved — re-invite reactivates.
+
+### Member Status Display
+
+Team Members tab shows three states:
+
+```
+Active  (green) → last_sign_in_at is set, is_active = true
+Pending (amber) → last_sign_in_at is null (invite sent, not yet accepted)
+Inactive (grey) → is_active = false (removed by admin)
+```
+
+Data comes from `f_get_org_members_with_status` RPC which joins `public.users` with `auth.users`.
+
+### Access Revocation on Removal
+
+Two-layer enforcement:
+
+```
+1. AuthContext: fetchUserProfile checks is_active after every auth state change.
+   If false → calls supabase.auth.signOut() immediately.
+
+2. ProtectedRoute: checks user.is_active on every route navigation.
+   If false → signs out.
+
+Note: JWT access tokens remain technically valid until expiry (Supabase
+limitation) but the is_active check in AuthContext catches the user on their
+next page load or navigation, effectively blocking access within seconds.
+```
+
 ---
 
-*AI Call Scheduler Technical Documentation v1.0 — June 2026*
-*Last updated: July 2026 — added security remediation log (Vault migration, search_path fixes, anon/authenticated SECURITY DEFINER review), orphaned function findings, Intellistrata API/webhook requirements, Stripe test mode credentials status, send-invite edge function, f_super_admin_get_all_orgs RPC, BLOCKED campaign run status, corrected NO_ANSWER Bland AI classification, RBAC documentation (Section 12), and Team Invitation Flow (Section 13).*
+## 14. Metered Billing Architecture
+
+### Overview
+
+The platform uses a hybrid billing model:
+
+- **Flat subscription plans** (Starter/Pro/Business) — monthly recurring fee via Stripe Subscriptions; included call minutes per month; usage resets on renewal.
+- **Free plan with Pay-As-You-Go (PAYG)** — no monthly charge; 60 included minutes/month; overage charged at $1.00/min via Stripe metered billing when a card is on file.
+
+### Plan Billing Summary
+
+| Plan | Monthly Fee | Included Minutes | Overage |
+|---|---|---|---|
+| **Free** | $0 | 60 min | $1.00/min (requires card on file) |
+| **Starter** | $29 | 500 min | Not available — upgrade required |
+| **Pro** | $79 | 2,000 min | Not available — upgrade required |
+| **Business** | $199 | 10,000 min | Not available — upgrade required |
+
+### Stripe Products Required
+
+Each paid plan checkout session attaches two Stripe prices:
+1. **Flat recurring price** (`stripe_price_id`) — fixed monthly subscription amount.
+2. **Metered usage price** (`stripe_metered_price_id`) — per-call-minute, aggregated, invoiced monthly.
+
+Stripe returns a `subscription_item` ID for the metered price on checkout completion. This is captured in `stripe-webhook` and stored in `org_subscriptions.stripe_metered_item_id`. `process-call-webhook` uses it to report per-call usage via the Stripe Usage Records API.
+
+### Free Plan PAYG Flow
+
+```
+1. Free plan user exhausts 60 included minutes
+2. prepare-campaign-calls calls f_check_org_limit → make_call check fails
+3. If stripe_customer_id is NULL → set run BLOCKED (no card, access denied)
+4. If stripe_customer_id is SET → allow call to proceed (PAYG)
+5. User without a card clicks Launch → AddPaymentMethodDialog opens:
+     → create-setup-intent creates Stripe SetupIntent + saves stripe_customer_id
+     → Stripe Elements collects card details (no charge)
+     → confirm-payment-method called on success (non-fatal)
+6. Subsequent calls pass f_check_org_limit (stripe_customer_id now set)
+7. process-call-webhook reports duration to Stripe UsageRecord API
+8. Stripe aggregates usage daily → invoices at end of month
+```
+
+### Database Fields
+
+| Table | Field | Purpose |
+|---|---|---|
+| `org_subscriptions` | `stripe_customer_id` | Stripe customer ID; set on first card save or checkout |
+| `org_subscriptions` | `stripe_metered_item_id` | Subscription item ID for metered price; set on paid plan checkout |
+| `plans` | `stripe_price_id` | Flat recurring price ID for checkout |
+| `plans` | `stripe_metered_price_id` | Metered usage price ID for checkout (pending — not yet in schema) |
+
+### Pending / Not Yet Wired
+
+```
+⚠️ stripe_metered_price_id column not yet added to the plans table.
+   Required before paid plan checkout can include the metered line item.
+
+⚠️ Free plan overage reporting to Stripe is not yet end-to-end.
+   process-call-webhook reports usage only when stripe_metered_item_id is set
+   (which requires a paid plan checkout). Free plan PAYG currently gates on
+   stripe_customer_id but does not yet create a Stripe Usage Record.
+
+⚠️ No Stripe metered product exists yet in test or live mode for the free
+   plan PAYG rate. Must be created and linked before live billing goes live.
+```
+
+---
+
+*AI Call Scheduler Technical Documentation v1.0 — July 2026*
+*Last updated: July 2026 — added security remediation log (Vault migration, search_path fixes, anon/authenticated SECURITY DEFINER review), orphaned function findings, Intellistrata API/webhook requirements, Stripe test mode credentials status, send-invite edge function, f_super_admin_get_all_orgs RPC, BLOCKED campaign run status, corrected NO_ANSWER Bland AI classification, RBAC documentation (Section 12), Team Invitation Flow (Section 13), team member management (pending status, revoke, remove, reactivation), super admin editable fields (name, plan, active status, usage reset), metered billing architecture (Section 14), create-setup-intent edge function, free plan PAYG flow, f_check_org_limit metered billing logic.*
