@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { supabase } from "@/lib/supabase";
-import { Loader2, AlertCircle, Info } from "lucide-react";
+import { Loader2, AlertCircle, Info, Pencil } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { StatusBadge } from "@/components/ui/status-badge";
 import {
@@ -12,6 +12,24 @@ import {
   TableRow,
   TableCell,
 } from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { useToast } from "@/hooks/use-toast";
 
 interface OrgRow {
   id: string;
@@ -29,10 +47,21 @@ interface OrgRow {
   user_count: number;
 }
 
+interface EditState {
+  org: OrgRow;
+  name: string;
+  plan_id: string;
+  is_active: boolean;
+  reset_usage: boolean;
+}
+
 export default function SuperAdminPage() {
   const [orgs, setOrgs] = useState<OrgRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
+  const [editState, setEditState] = useState<EditState | null>(null);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     async function fetchOrgs() {
@@ -53,6 +82,34 @@ export default function SuperAdminPage() {
 
     fetchOrgs();
   }, []);
+
+  const handleSave = async () => {
+    if (!editState) return;
+    setSaving(true);
+    try {
+      const { error } = await supabase.rpc(
+        'f_super_admin_update_org',
+        {
+          p_org_id: editState.org.id,
+          p_name: editState.name,
+          p_plan_id: editState.plan_id,
+          p_is_active: editState.is_active,
+          p_reset_usage: editState.reset_usage,
+        }
+      );
+      if (error) throw error;
+
+      toast({ title: "Organisation updated", description: `Changes saved for ${editState.name}.` });
+      setEditState(null);
+
+      const { data, error: fetchError } = await supabase.rpc('f_super_admin_get_all_orgs');
+      if (!fetchError) setOrgs((data as OrgRow[]) || []);
+    } catch (err: any) {
+      toast({ title: "Failed to save", description: err.message || "An error occurred.", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const formatDate = (dateStr: string | null | undefined) => {
     if (!dateStr) return "—";
@@ -113,12 +170,13 @@ export default function SuperAdminPage() {
                   <TableHead className="text-right">Campaigns</TableHead>
                   <TableHead>Period End</TableHead>
                   <TableHead>Active</TableHead>
+                  <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {orgs.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={12} className="text-center py-8 text-muted-foreground">
                       No organizations found.
                     </TableCell>
                   </TableRow>
@@ -142,6 +200,23 @@ export default function SuperAdminPage() {
                           {row.is_active ? "Active" : "Inactive"}
                         </StatusBadge>
                       </TableCell>
+                      <TableCell>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs px-2"
+                          onClick={() => setEditState({
+                            org: row,
+                            name: row.name || '',
+                            plan_id: row.plan_id || 'free',
+                            is_active: row.is_active,
+                            reset_usage: false,
+                          })}
+                        >
+                          <Pencil className="h-3 w-3 mr-1" />
+                          Edit
+                        </Button>
+                      </TableCell>
                     </TableRow>
                   ))
                 )}
@@ -150,6 +225,109 @@ export default function SuperAdminPage() {
           </div>
         )}
       </div>
+
+      <Dialog open={!!editState} onOpenChange={(o) => { if (!o) setEditState(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Organisation</DialogTitle>
+            <DialogDescription>
+              Changes apply to the database only. Stripe billing is not affected.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Organisation Name</label>
+              <Input
+                value={editState?.name || ''}
+                onChange={(e) => setEditState(prev =>
+                  prev ? { ...prev, name: e.target.value } : null
+                )}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Plan Override</label>
+              <p className="text-xs text-muted-foreground">
+                Database only — does not affect Stripe billing.
+              </p>
+              <Select
+                value={editState?.plan_id || 'free'}
+                onValueChange={(v) => setEditState(prev =>
+                  prev ? { ...prev, plan_id: v } : null
+                )}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="free">Free</SelectItem>
+                  <SelectItem value="starter">Starter</SelectItem>
+                  <SelectItem value="pro">Pro</SelectItem>
+                  <SelectItem value="business">Business</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex items-center justify-between rounded-lg border border-border p-3">
+              <div>
+                <p className="text-sm font-medium">Organisation Active</p>
+                <p className="text-xs text-muted-foreground">
+                  Inactive orgs cannot log in or use the platform.
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={editState?.is_active}
+                onClick={() => setEditState(prev =>
+                  prev ? { ...prev, is_active: !prev.is_active } : null
+                )}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                  editState?.is_active ? 'bg-primary' : 'bg-muted-foreground/30'
+                }`}
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  editState?.is_active ? 'translate-x-6' : 'translate-x-1'
+                }`} />
+              </button>
+            </div>
+
+            <div className="flex items-center gap-3 rounded-lg border border-destructive/20 bg-destructive/5 p-3">
+              <input
+                type="checkbox"
+                id="reset-usage"
+                checked={editState?.reset_usage || false}
+                onChange={(e) => setEditState(prev =>
+                  prev ? { ...prev, reset_usage: e.target.checked } : null
+                )}
+                className="h-4 w-4 accent-destructive"
+              />
+              <div>
+                <label htmlFor="reset-usage" className="text-sm font-medium text-destructive cursor-pointer">
+                  Reset usage counters to zero
+                </label>
+                <p className="text-xs text-muted-foreground">
+                  Resets calls made, minutes used, contacts and campaigns count. Use to fix billing errors only.
+                </p>
+              </div>
+            </div>
+
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditState(null)} disabled={saving}>
+              Cancel
+            </Button>
+            <Button onClick={handleSave} disabled={saving}>
+              {saving
+                ? <><Loader2 className="h-4 w-4 animate-spin mr-1.5" />Saving…</>
+                : 'Save Changes'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }

@@ -10,12 +10,14 @@ export interface AuthUser {
   initials: string;
   role: string | null;
   org_id: string | null;
+  is_active: boolean;
 }
 
 export interface OrgSubscription {
   plan_id: string;
   plan_name: string;
   price_monthly: number;
+  stripe_customer_id: string | null;
   status: string;
   max_contacts: number;
   max_campaigns: number;
@@ -59,6 +61,7 @@ function authUserFallback(authUser: { id: string; email?: string }): AuthUser {
     initials: initial,
     role: null,
     org_id: null,
+    is_active: true,
   };
 }
 
@@ -66,7 +69,7 @@ export async function fetchUserProfile(authUserId: string): Promise<AuthUser | n
   try {
     const { data, error } = await supabase
       .from("users")
-      .select("id, first_name, last_name, email, role, org_id")
+      .select("id, first_name, last_name, email, role, org_id, is_active")
       .eq("clerk_user_id", authUserId)
       .maybeSingle();
 
@@ -77,6 +80,12 @@ export async function fetchUserProfile(authUserId: string): Promise<AuthUser | n
 
     if (!data) {
       console.warn("No user profile found for authUserId:", authUserId);
+      return null;
+    }
+
+    if (data.is_active === false) {
+      console.log('User account deactivated — signing out');
+      await supabase.auth.signOut();
       return null;
     }
 
@@ -96,6 +105,7 @@ export async function fetchUserProfile(authUserId: string): Promise<AuthUser | n
       initials,
       role: data.role ?? null,
       org_id: data.org_id ?? null,
+      is_active: data.is_active ?? true,
     };
   } catch (err) {
     console.error("fetchUserProfile threw unexpectedly:", err);
@@ -214,8 +224,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setUser(prev => prev || authUserFallback(session.user));
 
             // Fetch full profile but don't let it block the loading state Transition
-            fetchUserProfile(session.user.id).then(profile => {
+            fetchUserProfile(session.user.id).then(async profile => {
               if (profile) {
+                if (profile.is_active === false) {
+                  console.log('Deactivated user detected — signing out');
+                  await supabase.auth.signOut();
+                  return;
+                }
                 setUser(profile);
                 if (profile.org_id) {
                   fetchSubscription(profile.org_id);

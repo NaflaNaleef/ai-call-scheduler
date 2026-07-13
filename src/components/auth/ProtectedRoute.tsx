@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/lib/supabase";
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -16,6 +17,13 @@ export function ProtectedRoute({ children, roles }: ProtectedRouteProps) {
   const isSuperAdmin = user?.email === "testuser@example.com";
   const userRole = (isSuperAdmin ? "super_admin" : (user?.role || "member")) as "admin" | "member" | "super_admin";
   const hasPermission = !roles || roles.includes(userRole);
+
+  useEffect(() => {
+    if (!user) return;
+    if (user.is_active === false) {
+      supabase.auth.signOut();
+    }
+  }, [user?.id, user?.is_active, location.pathname]);
 
   useEffect(() => {
     if (isAuthenticated && !loading && !hasPermission) {

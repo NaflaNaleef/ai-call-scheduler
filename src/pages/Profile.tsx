@@ -121,48 +121,81 @@ export default function ProfilePage() {
 
   interface TeamMember {
     id: string;
+    auth_user_id: string;
     email: string;
     first_name: string | null;
     last_name: string | null;
-    role: string | null;
+    role: string;
     is_active: boolean;
     created_at: string;
+    last_sign_in_at: string | null;
+    invite_status: 'pending' | 'active' | 'inactive';
   }
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
+  const [membersKey, setMembersKey] = useState(0);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteSending, setInviteSending] = useState(false);
+  const [managingMember, setManagingMember] = useState<TeamMember | null>(null);
+  const [manageAction, setManageAction] = useState<'revoke' | 'remove' | null>(null);
+  const [manageLoading, setManageLoading] = useState(false);
 
   useEffect(() => {
     if (!isAdmin || !user?.org_id) return;
     setMembersLoading(true);
     supabase
-      .from("users")
-      .select("id, email, first_name, last_name, role, is_active, created_at")
-      .eq("org_id", user.org_id)
-      .order("created_at", { ascending: true })
-      .then(({ data }) => {
-        setMembers((data as TeamMember[]) || []);
+      .rpc('f_get_org_members_with_status', { p_org_id: user.org_id })
+      .then(({ data, error }) => {
+        if (!error) setMembers((data as TeamMember[]) || []);
         setMembersLoading(false);
       });
-  }, [isAdmin, user?.org_id]);
+  }, [isAdmin, user?.org_id, membersKey]);
 
   const handleInvite = async () => {
     if (!inviteEmail.trim()) return;
     setInviteSending(true);
     try {
-      const { error } = await supabase.functions.invoke("send-invite", {
+      const { data, error } = await supabase.functions.invoke("send-invite", {
         body: { email: inviteEmail.trim() },
       });
       if (error) throw error;
-      toast({ title: "Invitation sent", description: `Invitation sent to ${inviteEmail.trim()}` });
+      const responseData = data as any;
+      toast({
+        title: responseData?.reactivated
+          ? "Member re-added"
+          : "Invitation sent",
+        description: responseData?.reactivated
+          ? `${inviteEmail.trim()} has been re-added to your organisation.`
+          : `Invitation sent to ${inviteEmail.trim()}`,
+      });
       setInviteOpen(false);
       setInviteEmail("");
+      setMembersKey((prev) => prev + 1);
     } catch (err: any) {
       toast({ title: "Failed to send invitation", description: err.message || "An error occurred.", variant: "destructive" });
     } finally {
       setInviteSending(false);
+    }
+  };
+
+  const handleManageMember = async () => {
+    if (!managingMember || !manageAction) return;
+    setManageLoading(true);
+    try {
+      const { error } = await supabase.functions.invoke("manage-member", {
+        body: { action: manageAction, user_id: managingMember.id, auth_user_id: managingMember.auth_user_id },
+      });
+      if (error) throw error;
+      const label = manageAction === "revoke" ? "Invitation revoked" : "Member removed";
+      toast({ title: label, description: `${managingMember.email} has been ${manageAction === "revoke" ? "revoked" : "removed"}.` });
+      setManagingMember(null);
+      setManageAction(null);
+      setMembersKey((k) => k + 1);
+    } catch (err: any) {
+      toast({ title: "Action failed", description: err.message || "An error occurred.", variant: "destructive" });
+    } finally {
+      setManageLoading(false);
     }
   };
 
@@ -622,12 +655,13 @@ export default function ProfilePage() {
                           <TableHead>Role</TableHead>
                           <TableHead>Status</TableHead>
                           <TableHead>Joined</TableHead>
+                          <TableHead>Actions</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {members.length === 0 ? (
                           <TableRow>
-                            <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                            <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
                               No members found.
                             </TableCell>
                           </TableRow>
@@ -651,15 +685,46 @@ export default function ProfilePage() {
                                 <TableCell>
                                   <Badge
                                     variant="outline"
-                                    className={m.is_active
-                                      ? "border-green-500/30 text-green-600 bg-green-500/5"
-                                      : "border-destructive/30 text-destructive bg-destructive/5"}
+                                    className={
+                                      m.invite_status === 'active'
+                                        ? "border-green-500/30 text-green-600 bg-green-500/5"
+                                        : m.invite_status === 'pending'
+                                        ? "border-amber-500/30 text-amber-600 bg-amber-500/5"
+                                        : "border-border text-muted-foreground"
+                                    }
                                   >
-                                    {m.is_active ? "Active" : "Inactive"}
+                                    {m.invite_status === 'active' ? 'Active' : m.invite_status === 'pending' ? 'Pending' : 'Inactive'}
                                   </Badge>
                                 </TableCell>
                                 <TableCell className="text-muted-foreground text-sm">
                                   {formatMemberDate(m.created_at)}
+                                </TableCell>
+                                <TableCell>
+                                  {m.invite_status === 'pending' ? (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="text-destructive border-destructive/30 hover:bg-destructive/5"
+                                      onClick={() => { setManagingMember(m); setManageAction('revoke'); }}
+                                    >
+                                      Revoke
+                                    </Button>
+                                  ) : m.invite_status === 'active' && m.role !== 'admin' ? (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="text-destructive border-destructive/30 hover:bg-destructive/5"
+                                      onClick={() => { setManagingMember(m); setManageAction('remove'); }}
+                                    >
+                                      Remove
+                                    </Button>
+                                  ) : m.invite_status === 'inactive' ? (
+                                    <span className="text-xs text-muted-foreground italic">
+                                      Removed
+                                    </span>
+                                  ) : (
+                                    <span className="text-xs text-muted-foreground">—</span>
+                                  )}
                                 </TableCell>
                               </TableRow>
                             );
@@ -757,6 +822,30 @@ export default function ProfilePage() {
             </Button>
             <Button onClick={handleInvite} disabled={!inviteEmail.trim() || inviteSending}>
               {inviteSending ? <><Loader2 className="h-4 w-4 animate-spin" /> Sending…</> : "Send Invitation"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Manage Member Confirmation Dialog */}
+      <Dialog open={!!managingMember} onOpenChange={(o) => { if (!o) { setManagingMember(null); setManageAction(null); } }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{manageAction === 'revoke' ? 'Revoke Invitation' : 'Remove Member'}</DialogTitle>
+            <DialogDescription>
+              {manageAction === 'revoke'
+                ? `This will cancel the pending invitation for ${managingMember?.email}. They will no longer be able to use the invite link.`
+                : `This will remove ${managingMember?.email} from your organisation. They will lose access immediately.`}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setManagingMember(null); setManageAction(null); }} disabled={manageLoading}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleManageMember} disabled={manageLoading}>
+              {manageLoading
+                ? <><Loader2 className="h-4 w-4 animate-spin" /> Processing…</>
+                : manageAction === 'revoke' ? 'Revoke' : 'Remove'}
             </Button>
           </DialogFooter>
         </DialogContent>
