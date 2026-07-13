@@ -598,14 +598,14 @@ The sidebar also shows a live usage summary at all times (bottom of the left men
 
 Each plan includes a set number of call minutes per month. Minutes are counted based on actual call duration, rounded up to the nearest minute.
 
-| Plan | Included Minutes | What Happens When Exhausted |
-|---|---|---|
-| **Free** | 60 min/month | Campaigns blocked — unless you have a card on file, in which case overage is charged at **$1.00/min** (billed monthly) |
-| **Starter** | 500 min/month | Campaigns blocked until next billing cycle or plan upgrade |
-| **Pro** | 2,000 min/month | Campaigns blocked until next billing cycle or plan upgrade |
-| **Business** | 10,000 min/month | Campaigns blocked until next billing cycle or plan upgrade |
+| Plan | Monthly Fee | Included Minutes | Overage Rate |
+|---|---|---|---|
+| **Free** | $0/month | 0 min | $0.004/min from minute 1 (PAYG, requires card on file) |
+| **Starter** | $29/month | 100 min | $0.003/min above 100 |
+| **Pro** | $79/month | 300 min | $0.002/min above 300 |
+| **Business** | $199/month | 800 min | $0.001/min above 800 |
 
-💡 **Free plan tip:** Add a payment method to keep calling beyond your 60 included minutes. You will only be charged for what you use, invoiced at the end of the month. See [Adding a Payment Method (Free Plan)](#adding-a-payment-method-free-plan) below.
+💡 **Free plan tip:** Add a payment method to start making calls. You will be charged $0.004 per minute from minute 1, invoiced at the end of the month. See [Adding a Payment Method (Free Plan)](#adding-a-payment-method-free-plan) below.
 
 ---
 
@@ -619,6 +619,7 @@ The system checks your remaining call minutes **before** sending any calls to co
 - The Campaign Runs page shows a warning message with a link to upgrade your plan.
 - **Recurring campaigns** — the next scheduled run will resume automatically after upgrading or after your monthly minutes reset at the start of the next billing cycle.
 - **Immediate and run-once campaigns** — must be manually relaunched after upgrading or after your monthly reset.
+- **Paid plans** — Stripe automatically calculates the overage using graduated tier pricing — the first 100/300/800 minutes are always free within the plan, only true overage is charged.
 
 #### Minutes are tracked in real time
 

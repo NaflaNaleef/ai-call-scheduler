@@ -1561,14 +1561,22 @@ The platform uses a hybrid billing model:
 - **Flat subscription plans** (Starter/Pro/Business) — monthly recurring fee via Stripe Subscriptions; included call minutes per month; usage resets on renewal.
 - **Free plan with Pay-As-You-Go (PAYG)** — no monthly charge; 60 included minutes/month; overage charged at $1.00/min via Stripe metered billing when a card is on file.
 
-### Plan Billing Summary
+### How Stripe Metered Billing Works
 
-| Plan | Monthly Fee | Included Minutes | Overage |
+| Plan | Monthly | Included Min | Overage Rate |
 |---|---|---|---|
-| **Free** | $0 | 60 min | $1.00/min (requires card on file) |
-| **Starter** | $29 | 500 min | Not available — upgrade required |
-| **Pro** | $79 | 2,000 min | Not available — upgrade required |
-| **Business** | $199 | 10,000 min | Not available — upgrade required |
+| **Free** | $0 | 0 | $0.004/min (PAYG, all minutes) |
+| **Starter** | $29 | 100 | $0.003/min (above 100) |
+| **Pro** | $79 | 300 | $0.002/min (above 300) |
+| **Business** | $199 | 800 | $0.001/min (above 800) |
+
+Paid plan metered prices use Stripe's graduated tier pricing:
+- Tier 1: First N minutes (included) → $0.00
+- Tier 2: Above N minutes → overage rate
+
+Stripe automatically handles the included minutes calculation — we report ALL minutes after each call and Stripe bills only the true overage. No custom calculation needed on our side.
+
+Free plan uses a flat metered rate with no tiers — every minute is billed from minute 1 at $0.004/min.
 
 ### Stripe Products Required
 
@@ -1603,19 +1611,13 @@ Stripe returns a `subscription_item` ID for the metered price on checkout comple
 | `plans` | `stripe_price_id` | Flat recurring price ID for checkout |
 | `plans` | `stripe_metered_price_id` | Metered usage price ID for checkout (pending — not yet in schema) |
 
-### Pending / Not Yet Wired
+### Pending (waiting on supervisor)
 
 ```
-⚠️ stripe_metered_price_id column not yet added to the plans table.
-   Required before paid plan checkout can include the metered line item.
-
-⚠️ Free plan overage reporting to Stripe is not yet end-to-end.
-   process-call-webhook reports usage only when stripe_metered_item_id is set
-   (which requires a paid plan checkout). Free plan PAYG currently gates on
-   stripe_customer_id but does not yet create a Stripe Usage Record.
-
-⚠️ No Stripe metered product exists yet in test or live mode for the free
-   plan PAYG rate. Must be created and linked before live billing goes live.
+⚠️ stripe_metered_price_id values need to be added to the plans table once
+   supervisor creates the metered prices in Stripe using graduated tier pricing
+   for paid plans and flat rate for free plan. One SQL UPDATE per plan once
+   Price IDs are received.
 ```
 
 ---
