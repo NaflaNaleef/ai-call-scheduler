@@ -752,6 +752,8 @@ Total:      8 active edge functions
 → If recurring → create next scheduled run
 ```
 
+**Language model:** The batch payload uses `language: 'fluent'` to enable Bland AI's Fluent transcription model. Fluent provides ~27% fewer transcription errors compared to the standard model, better turn detection (agent waits correctly when user pauses mid-thought), and supports 6 languages with automatic language detection (English, Spanish, German, French, Portuguese, Italian). Falls back to Auto model if Fluent encounters any issues. No extra cost.
+
 ### Function 2 — `process-call-webhook`
 
 **Purpose:** Receives Bland AI webhooks after each call.
@@ -1104,6 +1106,14 @@ Naming:    f_ prefix convention
 **API Base:** https://api.bland.ai  
 **Auth:** `authorization: BLAND_API_KEY` header
 
+**Transcription model:** Fluent (as of July 2026)
+```
+→ Word error rate: ~5.9% (vs 8.1% industry standard)
+→ Supported languages: English, Spanish, German, French, Portuguese, Italian
+→ Auto language detection enabled
+→ Configured via language: 'fluent' in the batch payload global object
+```
+
 #### Batch Calls API
 
 **Endpoint:** `POST https://api.bland.ai/v2/batches/create`
@@ -1113,7 +1123,7 @@ Naming:    f_ prefix convention
 {
   "global": {
     "task": "instructions + fields",
-    "language": "en",
+    "language": "fluent",
     "analysis_schema": { "field_name": { "type": "string" } },
     "webhook": "https://project.supabase.co/functions/v1/process-call-webhook",
     "record": true,
