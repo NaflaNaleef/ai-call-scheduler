@@ -265,6 +265,26 @@ export function AppSidebar() {
             );
           })()}
 
+          {/* Estimated overage for paid plans */}
+          {(() => {
+            const overageMinutes = Math.max(
+              0,
+              (subscription.call_minutes_used ?? 0) -
+              (subscription.max_call_minutes_per_month ?? 0)
+            );
+            const overageRate = subscription.overage_rate_per_minute ?? 0;
+            const estimatedOverage = overageMinutes * overageRate;
+            if (overageMinutes <= 0 || subscription.plan_id === 'free') return null;
+            return (
+              <div className="flex justify-between items-center mt-1">
+                <span className="text-[10px] text-muted-foreground">Est. overage</span>
+                <span className="text-[10px] font-medium text-destructive">
+                  ${estimatedOverage.toFixed(2)} AUD
+                </span>
+              </div>
+            );
+          })()}
+
           {/* Contacts */}
           {(() => {
             const used = subscription.contacts_count;

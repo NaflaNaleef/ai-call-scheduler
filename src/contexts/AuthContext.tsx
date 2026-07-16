@@ -18,6 +18,7 @@ export interface OrgSubscription {
   plan_name: string;
   price_monthly: number;
   stripe_customer_id: string | null;
+  overage_rate_per_minute: number;
   status: string;
   max_contacts: number;
   max_campaigns: number;
