@@ -627,6 +627,7 @@ The system checks your remaining call minutes **before** sending any calls to co
 - Your current usage is always visible in the sidebar (**Call Minutes** progress bar at the bottom of the left menu).
 - The bar turns **amber** at 80% usage and **red** when the limit is reached.
 - Call minutes reset on the **1st of each calendar month**.
+- When call minutes exceed your plan's included allowance, an estimated overage cost is shown below the progress bar in the sidebar. This updates in real time as calls complete.
 
 #### Other limits
 
@@ -680,6 +681,8 @@ If you are on the Free plan and your call minutes are exhausted, the Launch butt
 3. Click **Upgrade** (or **Change Plan**) next to the plan you want.
 4. Follow the payment steps to complete the upgrade.
 5. Your new plan limits take effect immediately after payment.
+
+**Billing History** — past invoices are shown in the Billing History section. Click the download button on any invoice to open or save a PDF copy. Invoices appear after each billing cycle completes.
 
 **Billing history** is also available on the Subscriptions page. Each invoice shows:
 

@@ -725,7 +725,7 @@ ai_webhooks            → USING false (service role only)
 Runtime:    Deno (TypeScript)
 Platform:   Supabase Edge Functions
 Auth:       Service Role key (bypasses RLS)
-Total:      8 active edge functions
+Total:      9 active edge functions
 ```
 
 ### Function 1 — `prepare-campaign-calls`
@@ -902,7 +902,34 @@ authorization, x-client-info, apikey, content-type
 
 ---
 
-### Function 7 — `create-checkout-session`
+### Function 7 — `get-invoices`
+
+**Purpose:** Fetches the organisation's invoice history from Stripe.
+
+**Triggered by:** Subscriptions page on load.
+
+**Flow:**
+```
+→ Verifies caller JWT
+→ Gets org's stripe_customer_id from org_subscriptions
+→ If no customer → returns empty list { invoices: [] }
+→ Calls stripe.invoices.list({ customer })
+→ Returns last 24 invoices with:
+    id, date (Unix timestamp), amount (cents),
+    currency, status (paid/open/draft),
+    pdf_url, hosted_invoice_url
+→ Frontend formats and displays in Billing History
+  table with download button
+```
+
+**CORS Headers required:**
+```
+authorization, x-client-info, apikey, content-type
+```
+
+---
+
+### Function 8 — `create-checkout-session`
 
 **Purpose:** Creates Stripe checkout session for plan upgrades.
 
@@ -924,7 +951,7 @@ authorization, x-client-info, apikey, content-type
 authorization, x-client-info, apikey, content-type
 ```
 
-### Function 8 — `stripe-webhook`
+### Function 9 — `stripe-webhook`
 
 **Purpose:** Handles Stripe payment events.
 
@@ -1085,7 +1112,7 @@ Naming:    f_ prefix convention
 
 | Function | Arguments | Purpose |
 |---|---|---|
-| f_get_org_subscription_and_usage | p_org_id | Complete plan + usage data. Live counts for contacts and campaigns. |
+| f_get_org_subscription_and_usage | p_org_id | Complete plan + usage data. Live counts for contacts and campaigns. Return columns include `overage_rate_per_minute` from the plans table. |
 | f_check_org_limit | p_org_id, p_action | Checks if action allowed. Actions: add_contact, add_campaign, make_call. For make_call: free plan with no stripe_customer_id → blocked at minute limit; free plan with stripe_customer_id (card on file) → allowed beyond limit at PAYG rate; paid plans → always allowed up to their limit. |
 | f_increment_usage | p_org_id, p_calls_made, p_call_minutes, p_contacts, p_campaigns | Atomically increments usage. Upsert pattern. |
 
@@ -1388,6 +1415,8 @@ Database:   No automated rollback — keep rollback SQL ready
 | 27 | Team members UI | Implemented: Team Members tab in Profile page (admin only) with pending/active/inactive status, invite sending, revoke pending invitations, remove active members, and reactivation via re-invite. Managed via `f_get_org_members_with_status` RPC and `manage-member` edge function. |
 | 28 | Call minutes enforcement updated for metered billing (free plan PAYG) | FIXED: `f_check_org_limit` now allows free plan orgs with a `stripe_customer_id` on file to exceed their included 60 min/month at $1.00/min (PAYG). `process-call-webhook` reports per-call usage to Stripe when `stripe_metered_item_id` is set. Free plan orgs with no card are still blocked at the limit. Card collection handled by `create-setup-intent` edge function and `AddPaymentMethodDialog` component. |
 | 29 | Free plan UI fix — `callMinutesExhausted` and `needsPaymentMethod` logic corrected | FIXED: `callMinutesExhausted` now correctly excludes free plan (`plan_id !== 'free'`) so free plan users always see the Add Payment Method dialog instead of the generic upgrade message. `needsPaymentMethod` no longer depends on `callMinutesExhausted` — it simply checks `plan_id === 'free'` and no `stripe_customer_id`. |
+| 30 | Invoice history | Subscriptions page now fetches real Stripe invoices via `get-invoices` edge function. Download links open Stripe's hosted PDF. Empty state shown when no invoices exist yet. Mock billing data removed. |
+| 31 | Overage cost display | Sidebar now shows estimated overage cost below the Call Minutes progress bar when a paid plan user exceeds their included minutes. Calculated as: `max(0, minutes_used − included_minutes) × overage_rate_per_minute` from the plans table. Updates in real time as usage changes. |
 
 **Verification query used for #7 and #8 (re-run if auditing function grants again):**
 ```sql
