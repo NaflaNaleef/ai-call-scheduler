@@ -656,6 +656,9 @@ If you are on the Free plan and your call minutes are exhausted, the Launch butt
 2. A dialog will appear: **Add Payment Method**.
 3. Enter your card details (card number, expiry, CVC).
 4. Click **Save Card**.
+
+   Once your card is saved, it is automatically set as your default payment method for all future invoices. You will not be charged until the end of the month when Stripe calculates your total minutes used.
+
 5. Your card is saved securely via Stripe — no charge is made at this point.
 6. Click **Launch** again — your campaign will now proceed.
 
@@ -666,7 +669,7 @@ If you are on the Free plan and your call minutes are exhausted, the Launch butt
 - You will receive a monthly invoice from Stripe at the end of each billing period.
 - The invoice shows your total overage usage for the month.
 
-⚠️ **Note:** Your card details are never stored on our servers. All card handling is done securely by Stripe.
+⚠️ **Note:** Your card details are stored and managed securely by Stripe. We never store card numbers on our servers. Your saved card will be used automatically for monthly call minutes invoices.
 
 ---
 

@@ -725,7 +725,7 @@ ai_webhooks            → USING false (service role only)
 Runtime:    Deno (TypeScript)
 Platform:   Supabase Edge Functions
 Auth:       Service Role key (bypasses RLS)
-Total:      7 active edge functions
+Total:      8 active edge functions
 ```
 
 ### Function 1 — `prepare-campaign-calls`
@@ -870,7 +870,37 @@ authorization, x-client-info, apikey, content-type
 
 ---
 
-### Function 6 — `create-checkout-session`
+### Function 6 — `confirm-payment-method`
+
+**Purpose:** Completes the free plan card setup after a Stripe SetupIntent succeeds. Called by the frontend immediately after the user successfully saves their card via Stripe Elements.
+
+**Triggered by:** `AddPaymentMethodDialog` component after `stripe.confirmCardSetup()` succeeds.
+
+**Flow:**
+```
+→ Verifies caller JWT
+→ Gets org's stripe_customer_id from org_subscriptions
+→ Attaches the payment method to the Stripe customer
+  via stripe.paymentMethods.attach()
+→ Sets it as the default payment method on the customer
+  (invoice_settings.default_payment_method)
+→ If a subscription exists, also sets it as default
+  on the subscription
+→ Returns success
+```
+
+**Why needed:** Stripe's SetupIntent saves card details but does not automatically attach the card to the customer or set it as default for future invoices. This function completes that step so Stripe knows which card to charge at end of month for metered usage.
+
+**Request body:** `{ payment_method_id: string }`
+
+**CORS Headers required:**
+```
+authorization, x-client-info, apikey, content-type
+```
+
+---
+
+### Function 7 — `create-checkout-session`
 
 **Purpose:** Creates Stripe checkout session for plan upgrades.
 
@@ -892,7 +922,7 @@ authorization, x-client-info, apikey, content-type
 authorization, x-client-info, apikey, content-type
 ```
 
-### Function 7 — `stripe-webhook`
+### Function 8 — `stripe-webhook`
 
 **Purpose:** Handles Stripe payment events.
 
@@ -1347,6 +1377,7 @@ Database:   No automated rollback — keep rollback SQL ready
 | 13 | Bland AI NO_ANSWER classification matched "no answer" string that Bland never actually sends | FIXED: `process-call-webhook` now correctly matches `"temporarily unavailable"` (Bland AI's actual error string for unanswered calls). BUSY continues to match `"busy"` correctly. |
 | 27 | Team members UI | Implemented: Team Members tab in Profile page (admin only) with pending/active/inactive status, invite sending, revoke pending invitations, remove active members, and reactivation via re-invite. Managed via `f_get_org_members_with_status` RPC and `manage-member` edge function. |
 | 28 | Call minutes enforcement updated for metered billing (free plan PAYG) | FIXED: `f_check_org_limit` now allows free plan orgs with a `stripe_customer_id` on file to exceed their included 60 min/month at $1.00/min (PAYG). `process-call-webhook` reports per-call usage to Stripe when `stripe_metered_item_id` is set. Free plan orgs with no card are still blocked at the limit. Card collection handled by `create-setup-intent` edge function and `AddPaymentMethodDialog` component. |
+| 29 | Free plan UI fix — `callMinutesExhausted` and `needsPaymentMethod` logic corrected | FIXED: `callMinutesExhausted` now correctly excludes free plan (`plan_id !== 'free'`) so free plan users always see the Add Payment Method dialog instead of the generic upgrade message. `needsPaymentMethod` no longer depends on `callMinutesExhausted` — it simply checks `plan_id === 'free'` and no `stripe_customer_id`. |
 
 **Verification query used for #7 and #8 (re-run if auditing function grants again):**
 ```sql
