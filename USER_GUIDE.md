@@ -823,4 +823,51 @@ The Team Members table shows three status types:
 
 ---
 
+## API Access
+
+The platform provides a REST API for programmatic access and B2B integrations. This allows external systems like Intellistrata to create contacts, launch campaigns, and receive call results automatically without using the web interface.
+
+---
+
+### Getting an API Key
+
+API keys are managed by your organisation admin. To get a key:
+
+1. Contact your platform administrator.
+2. They will generate a key for your integration.
+3. Store the key securely — it is shown only once and cannot be retrieved again.
+4. Include the key in all API requests:
+   ```
+   Authorization: Bearer ak_live_xxx
+   ```
+
+---
+
+### What the API Can Do
+
+- Create and manage contacts.
+- Create and launch campaigns.
+- Check campaign status and call progress.
+- Retrieve call logs and outcomes.
+- Register webhook URLs to receive automatic call completion notifications.
+
+---
+
+### Webhooks
+
+Register a webhook URL to receive automatic notifications when calls complete. Your system receives a POST request with the call outcome, transcript, and collected data immediately after each call finishes.
+
+Webhook payloads are signed so you can verify they came from this platform. Save the signing secret when you register your webhook — it is shown only once.
+
+---
+
+### Security
+
+- Keep your API key secret — treat it like a password.
+- Never include it in frontend/browser code.
+- If compromised, contact your admin to revoke it immediately.
+- Each key only accesses your own organisation's data.
+
+---
+
 *For further assistance, please contact your account manager or visit the support centre.*

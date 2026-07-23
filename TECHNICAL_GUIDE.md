@@ -1692,5 +1692,238 @@ Stripe returns a `subscription_item` ID for the metered price on checkout comple
 
 ---
 
+## 15. API Gateway
+
+### Overview
+
+The API gateway provides external REST API access to the platform for B2B integrations. Intellistrata is the first confirmed client, using this to integrate AI calling into their debt recovery workflow alongside existing post, email and SMS channels.
+
+### Authentication
+
+All API requests must include an API key in the Authorization header:
+
+```
+Authorization: Bearer ak_live_xxxxxxxxxxxxx
+```
+
+API keys are generated per organisation, stored as SHA-256 hashes (never plain text), and can be revoked at any time.
+
+### Base URL
+
+```
+https://eekzetzhlxhclerfdcmf.supabase.co/functions/v1/api-gateway
+```
+
+### Endpoints
+
+| Method | Path | Description |
+|---|---|---|
+| GET | /contacts | List all active contacts |
+| POST | /contacts | Create a new contact |
+| POST | /campaigns | Create a new campaign |
+| POST | /campaigns/:id/launch | Launch a campaign |
+| GET | /campaigns/:id/status | Get latest run status |
+| GET | /call-logs | Get call results |
+| POST | /webhooks | Register a webhook URL |
+| GET | /webhooks | List active webhooks |
+| DELETE | /webhooks/:id | Remove a webhook |
+
+### Endpoint Details
+
+**POST /contacts**
+```
+Required: phone_number
+Optional: first_name, last_name, email
+Returns:  contact object with id
+```
+
+**POST /campaigns**
+```
+Required: name, greeting, instructions
+Optional: schedule_type (immediate/scheduled/recurring),
+          scheduled_start_at, contact_ids[]
+Returns:  campaign_id
+```
+
+**POST /campaigns/:id/launch**
+```
+No body required
+Returns: campaign_id, run_id, status
+```
+
+**GET /campaigns/:id/status**
+```
+Returns: latest_run object with status, calls_attempted,
+         calls_completed, calls_pending
+```
+
+**GET /call-logs**
+```
+Optional query params: campaign_id, limit
+Returns: array of call logs with status, call_duration,
+         collected_data, transcript_text
+```
+
+**POST /webhooks**
+```
+Required: target_url
+Optional: event_types (default: ['call.completed'])
+Returns:  webhook object + signing secret
+          (secret shown only once — save immediately)
+```
+
+### How to Generate an API Key
+
+Run in Supabase SQL Editor:
+
+```sql
+SELECT * FROM f_create_api_key(
+  'your-org-id-here',
+  'Key name e.g. Intellistrata Production'
+);
+```
+
+Copy the `api_key` value immediately. It is shown only once and cannot be retrieved again. Store it securely.
+
+### How to Test the API
+
+Use any HTTP client (Postman, curl, or browser DevTools console):
+
+```typescript
+// GET contacts
+fetch('/api-gateway/contacts', {
+  headers: { 'Authorization': 'Bearer ak_live_xxx' }
+})
+
+// Create a contact
+fetch('/api-gateway/contacts', {
+  method: 'POST',
+  headers: {
+    'Authorization': 'Bearer ak_live_xxx',
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    first_name: 'John',
+    phone_number: '+61412345678'
+  })
+})
+```
+
+**Full workflow:**
+```
+1. POST /contacts                    → get contact_id
+2. POST /campaigns with contact_ids  → get campaign_id
+3. POST /campaigns/:id/launch        → launches calls
+4. GET /campaigns/:id/status         → check progress
+5. GET /call-logs?campaign_id=xxx    → get results
+```
+
+### How API Key Validation Works
+
+```
+1. Request arrives at api-gateway edge function
+2. Authorization header extracted
+3. Key hashed using SHA-256
+4. Hash compared against api_keys table
+5. If match found and is_active = true
+   → org_id extracted → request proceeds
+6. If no match → 401 Unauthorized returned
+7. last_used_at updated on every valid request
+```
+
+### Webhook Events
+
+Currently supported event: `call.completed` → fired when a call finishes.
+
+**Payload sent to target_url:**
+```json
+{
+  "event": "call.completed",
+  "call_log_id": "uuid",
+  "campaign_id": "uuid",
+  "contact_id": "uuid",
+  "status": "ANSWERED/FAILED/VOICEMAIL/BUSY/NO_ANSWER",
+  "call_duration": "seconds",
+  "collected_data": {},
+  "transcript_text": "string | null"
+}
+```
+
+Payloads are signed using HMAC-SHA256. Verify the signature using the secret returned when registering the webhook.
+
+### Database Tables Added
+
+#### `api_keys`
+```
+id, org_id, name, key_hash (SHA-256), key_prefix,
+is_active, last_used_at, created_at, updated_at
+```
+
+#### `webhook_subscriptions`
+```
+id, org_id, target_url, secret, event_types[],
+is_active, created_at, updated_at
+```
+
+### RPCs Added
+
+```
+f_create_api_key(org_id, name)
+  → Generates key, stores SHA-256 hash, returns plain key
+    once only. Uses pgcrypto extension (extensions schema).
+
+f_get_api_keys(org_id)
+  → Lists all keys for an org without revealing the key
+    values. Shows key_prefix, is_active, last_used_at.
+
+f_revoke_api_key(key_id, org_id)
+  → Sets is_active = false. Key immediately stops working.
+
+f_validate_api_key(api_key)
+  → Hashes the input key, looks up matching hash in
+    api_keys table, updates last_used_at, returns
+    org_id and key_id.
+```
+
+### Edge Function
+
+`api-gateway` deployed with `--no-verify-jwt` because Intellistrata sends an API key, not a Supabase JWT. JWT verification disabled at the Supabase function level. The function validates the API key itself.
+
+### Security
+
+```
+→ Keys stored as SHA-256 hashes only — plain text never
+  stored after generation
+→ Plain key shown once at generation time
+→ All requests validated before any action
+→ Org isolation enforced — API key only accesses data
+  belonging to its org
+→ Cannot access other orgs' data
+→ Keys can be revoked instantly via f_revoke_api_key or
+  by setting is_active = false in api_keys table
+```
+
+### Known Limitations (not yet built)
+
+```
+→ Outbound webhook delivery: when a call completes, the
+  platform should POST results to registered webhook URLs.
+  Table and registration API are built; delivery logic in
+  process-call-webhook not yet implemented. Est: 1 day.
+
+→ API key management UI: admins should generate, view and
+  revoke keys from the Profile page. Currently SQL only.
+  Est: 1 day.
+
+→ Rate limiting: no per-key rate limiting implemented yet.
+  Recommended before production B2B use.
+
+→ Idempotency keys: no duplicate prevention on
+  campaign/contact creation. If Intellistrata retries a
+  failed request, a duplicate may be created.
+```
+
+---
+
 *AI Call Scheduler Technical Documentation v1.0 — July 2026*
 *Last updated: July 2026 — added security remediation log (Vault migration, search_path fixes, anon/authenticated SECURITY DEFINER review), orphaned function findings, Intellistrata API/webhook requirements, Stripe test mode credentials status, send-invite edge function, f_super_admin_get_all_orgs RPC, BLOCKED campaign run status, corrected NO_ANSWER Bland AI classification, RBAC documentation (Section 12), Team Invitation Flow (Section 13), team member management (pending status, revoke, remove, reactivation), super admin editable fields (name, plan, active status, usage reset), metered billing architecture (Section 14), create-setup-intent edge function, free plan PAYG flow, f_check_org_limit metered billing logic.*
