@@ -725,7 +725,7 @@ ai_webhooks            → USING false (service role only)
 Runtime:    Deno (TypeScript)
 Platform:   Supabase Edge Functions
 Auth:       Service Role key (bypasses RLS)
-Total:      7 active edge functions
+Total:      9 active edge functions
 ```
 
 ### Function 1 — `prepare-campaign-calls`
@@ -751,6 +751,8 @@ Total:      7 active edge functions
 → Mark all contacts as QUEUED
 → If recurring → create next scheduled run
 ```
+
+**Language model:** The batch payload uses `language: 'fluent'` to enable Bland AI's Fluent transcription model. Fluent provides ~27% fewer transcription errors compared to the standard model, better turn detection (agent waits correctly when user pauses mid-thought), and supports 6 languages with automatic language detection (English, Spanish, German, French, Portuguese, Italian). Falls back to Auto model if Fluent encounters any issues. No extra cost.
 
 ### Function 2 — `process-call-webhook`
 
@@ -870,7 +872,64 @@ authorization, x-client-info, apikey, content-type
 
 ---
 
-### Function 6 — `create-checkout-session`
+### Function 6 — `confirm-payment-method`
+
+**Purpose:** Completes the free plan card setup after a Stripe SetupIntent succeeds. Called by the frontend immediately after the user successfully saves their card via Stripe Elements.
+
+**Triggered by:** `AddPaymentMethodDialog` component after `stripe.confirmCardSetup()` succeeds.
+
+**Flow:**
+```
+→ Verifies caller JWT
+→ Gets org's stripe_customer_id from org_subscriptions
+→ Attaches the payment method to the Stripe customer
+  via stripe.paymentMethods.attach()
+→ Sets it as the default payment method on the customer
+  (invoice_settings.default_payment_method)
+→ If a subscription exists, also sets it as default
+  on the subscription
+→ Returns success
+```
+
+**Why needed:** Stripe's SetupIntent saves card details but does not automatically attach the card to the customer or set it as default for future invoices. This function completes that step so Stripe knows which card to charge at end of month for metered usage.
+
+**Request body:** `{ payment_method_id: string }`
+
+**CORS Headers required:**
+```
+authorization, x-client-info, apikey, content-type
+```
+
+---
+
+### Function 7 — `get-invoices`
+
+**Purpose:** Fetches the organisation's invoice history from Stripe.
+
+**Triggered by:** Subscriptions page on load.
+
+**Flow:**
+```
+→ Verifies caller JWT
+→ Gets org's stripe_customer_id from org_subscriptions
+→ If no customer → returns empty list { invoices: [] }
+→ Calls stripe.invoices.list({ customer })
+→ Returns last 24 invoices with:
+    id, date (Unix timestamp), amount (cents),
+    currency, status (paid/open/draft),
+    pdf_url, hosted_invoice_url
+→ Frontend formats and displays in Billing History
+  table with download button
+```
+
+**CORS Headers required:**
+```
+authorization, x-client-info, apikey, content-type
+```
+
+---
+
+### Function 8 — `create-checkout-session`
 
 **Purpose:** Creates Stripe checkout session for plan upgrades.
 
@@ -892,7 +951,7 @@ authorization, x-client-info, apikey, content-type
 authorization, x-client-info, apikey, content-type
 ```
 
-### Function 7 — `stripe-webhook`
+### Function 9 — `stripe-webhook`
 
 **Purpose:** Handles Stripe payment events.
 
@@ -1053,7 +1112,7 @@ Naming:    f_ prefix convention
 
 | Function | Arguments | Purpose |
 |---|---|---|
-| f_get_org_subscription_and_usage | p_org_id | Complete plan + usage data. Live counts for contacts and campaigns. |
+| f_get_org_subscription_and_usage | p_org_id | Complete plan + usage data. Live counts for contacts and campaigns. Return columns include `overage_rate_per_minute` from the plans table. |
 | f_check_org_limit | p_org_id, p_action | Checks if action allowed. Actions: add_contact, add_campaign, make_call. For make_call: free plan with no stripe_customer_id → blocked at minute limit; free plan with stripe_customer_id (card on file) → allowed beyond limit at PAYG rate; paid plans → always allowed up to their limit. |
 | f_increment_usage | p_org_id, p_calls_made, p_call_minutes, p_contacts, p_campaigns | Atomically increments usage. Upsert pattern. |
 
@@ -1074,6 +1133,14 @@ Naming:    f_ prefix convention
 **API Base:** https://api.bland.ai  
 **Auth:** `authorization: BLAND_API_KEY` header
 
+**Transcription model:** Fluent (as of July 2026)
+```
+→ Word error rate: ~5.9% (vs 8.1% industry standard)
+→ Supported languages: English, Spanish, German, French, Portuguese, Italian
+→ Auto language detection enabled
+→ Configured via language: 'fluent' in the batch payload global object
+```
+
 #### Batch Calls API
 
 **Endpoint:** `POST https://api.bland.ai/v2/batches/create`
@@ -1083,7 +1150,7 @@ Naming:    f_ prefix convention
 {
   "global": {
     "task": "instructions + fields",
-    "language": "en",
+    "language": "fluent",
     "analysis_schema": { "field_name": { "type": "string" } },
     "webhook": "https://project.supabase.co/functions/v1/process-call-webhook",
     "record": true,
@@ -1347,6 +1414,9 @@ Database:   No automated rollback — keep rollback SQL ready
 | 13 | Bland AI NO_ANSWER classification matched "no answer" string that Bland never actually sends | FIXED: `process-call-webhook` now correctly matches `"temporarily unavailable"` (Bland AI's actual error string for unanswered calls). BUSY continues to match `"busy"` correctly. |
 | 27 | Team members UI | Implemented: Team Members tab in Profile page (admin only) with pending/active/inactive status, invite sending, revoke pending invitations, remove active members, and reactivation via re-invite. Managed via `f_get_org_members_with_status` RPC and `manage-member` edge function. |
 | 28 | Call minutes enforcement updated for metered billing (free plan PAYG) | FIXED: `f_check_org_limit` now allows free plan orgs with a `stripe_customer_id` on file to exceed their included 60 min/month at $1.00/min (PAYG). `process-call-webhook` reports per-call usage to Stripe when `stripe_metered_item_id` is set. Free plan orgs with no card are still blocked at the limit. Card collection handled by `create-setup-intent` edge function and `AddPaymentMethodDialog` component. |
+| 29 | Free plan UI fix — `callMinutesExhausted` and `needsPaymentMethod` logic corrected | FIXED: `callMinutesExhausted` now correctly excludes free plan (`plan_id !== 'free'`) so free plan users always see the Add Payment Method dialog instead of the generic upgrade message. `needsPaymentMethod` no longer depends on `callMinutesExhausted` — it simply checks `plan_id === 'free'` and no `stripe_customer_id`. |
+| 30 | Invoice history | Subscriptions page now fetches real Stripe invoices via `get-invoices` edge function. Download links open Stripe's hosted PDF. Empty state shown when no invoices exist yet. Mock billing data removed. |
+| 31 | Overage cost display | Sidebar now shows estimated overage cost below the Call Minutes progress bar when a paid plan user exceeds their included minutes. Calculated as: `max(0, minutes_used − included_minutes) × overage_rate_per_minute` from the plans table. Updates in real time as usage changes. |
 
 **Verification query used for #7 and #8 (re-run if auditing function grants again):**
 ```sql
@@ -1618,6 +1688,239 @@ Stripe returns a `subscription_item` ID for the metered price on checkout comple
    supervisor creates the metered prices in Stripe using graduated tier pricing
    for paid plans and flat rate for free plan. One SQL UPDATE per plan once
    Price IDs are received.
+```
+
+---
+
+## 15. API Gateway
+
+### Overview
+
+The API gateway provides external REST API access to the platform for B2B integrations. Intellistrata is the first confirmed client, using this to integrate AI calling into their debt recovery workflow alongside existing post, email and SMS channels.
+
+### Authentication
+
+All API requests must include an API key in the Authorization header:
+
+```
+Authorization: Bearer ak_live_xxxxxxxxxxxxx
+```
+
+API keys are generated per organisation, stored as SHA-256 hashes (never plain text), and can be revoked at any time.
+
+### Base URL
+
+```
+https://eekzetzhlxhclerfdcmf.supabase.co/functions/v1/api-gateway
+```
+
+### Endpoints
+
+| Method | Path | Description |
+|---|---|---|
+| GET | /contacts | List all active contacts |
+| POST | /contacts | Create a new contact |
+| POST | /campaigns | Create a new campaign |
+| POST | /campaigns/:id/launch | Launch a campaign |
+| GET | /campaigns/:id/status | Get latest run status |
+| GET | /call-logs | Get call results |
+| POST | /webhooks | Register a webhook URL |
+| GET | /webhooks | List active webhooks |
+| DELETE | /webhooks/:id | Remove a webhook |
+
+### Endpoint Details
+
+**POST /contacts**
+```
+Required: phone_number
+Optional: first_name, last_name, email
+Returns:  contact object with id
+```
+
+**POST /campaigns**
+```
+Required: name, greeting, instructions
+Optional: schedule_type (immediate/scheduled/recurring),
+          scheduled_start_at, contact_ids[]
+Returns:  campaign_id
+```
+
+**POST /campaigns/:id/launch**
+```
+No body required
+Returns: campaign_id, run_id, status
+```
+
+**GET /campaigns/:id/status**
+```
+Returns: latest_run object with status, calls_attempted,
+         calls_completed, calls_pending
+```
+
+**GET /call-logs**
+```
+Optional query params: campaign_id, limit
+Returns: array of call logs with status, call_duration,
+         collected_data, transcript_text
+```
+
+**POST /webhooks**
+```
+Required: target_url
+Optional: event_types (default: ['call.completed'])
+Returns:  webhook object + signing secret
+          (secret shown only once — save immediately)
+```
+
+### How to Generate an API Key
+
+Run in Supabase SQL Editor:
+
+```sql
+SELECT * FROM f_create_api_key(
+  'your-org-id-here',
+  'Key name e.g. Intellistrata Production'
+);
+```
+
+Copy the `api_key` value immediately. It is shown only once and cannot be retrieved again. Store it securely.
+
+### How to Test the API
+
+Use any HTTP client (Postman, curl, or browser DevTools console):
+
+```typescript
+// GET contacts
+fetch('/api-gateway/contacts', {
+  headers: { 'Authorization': 'Bearer ak_live_xxx' }
+})
+
+// Create a contact
+fetch('/api-gateway/contacts', {
+  method: 'POST',
+  headers: {
+    'Authorization': 'Bearer ak_live_xxx',
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    first_name: 'John',
+    phone_number: '+61412345678'
+  })
+})
+```
+
+**Full workflow:**
+```
+1. POST /contacts                    → get contact_id
+2. POST /campaigns with contact_ids  → get campaign_id
+3. POST /campaigns/:id/launch        → launches calls
+4. GET /campaigns/:id/status         → check progress
+5. GET /call-logs?campaign_id=xxx    → get results
+```
+
+### How API Key Validation Works
+
+```
+1. Request arrives at api-gateway edge function
+2. Authorization header extracted
+3. Key hashed using SHA-256
+4. Hash compared against api_keys table
+5. If match found and is_active = true
+   → org_id extracted → request proceeds
+6. If no match → 401 Unauthorized returned
+7. last_used_at updated on every valid request
+```
+
+### Webhook Events
+
+Currently supported event: `call.completed` → fired when a call finishes.
+
+**Payload sent to target_url:**
+```json
+{
+  "event": "call.completed",
+  "call_log_id": "uuid",
+  "campaign_id": "uuid",
+  "contact_id": "uuid",
+  "status": "ANSWERED/FAILED/VOICEMAIL/BUSY/NO_ANSWER",
+  "call_duration": "seconds",
+  "collected_data": {},
+  "transcript_text": "string | null"
+}
+```
+
+Payloads are signed using HMAC-SHA256. Verify the signature using the secret returned when registering the webhook.
+
+### Database Tables Added
+
+#### `api_keys`
+```
+id, org_id, name, key_hash (SHA-256), key_prefix,
+is_active, last_used_at, created_at, updated_at
+```
+
+#### `webhook_subscriptions`
+```
+id, org_id, target_url, secret, event_types[],
+is_active, created_at, updated_at
+```
+
+### RPCs Added
+
+```
+f_create_api_key(org_id, name)
+  → Generates key, stores SHA-256 hash, returns plain key
+    once only. Uses pgcrypto extension (extensions schema).
+
+f_get_api_keys(org_id)
+  → Lists all keys for an org without revealing the key
+    values. Shows key_prefix, is_active, last_used_at.
+
+f_revoke_api_key(key_id, org_id)
+  → Sets is_active = false. Key immediately stops working.
+
+f_validate_api_key(api_key)
+  → Hashes the input key, looks up matching hash in
+    api_keys table, updates last_used_at, returns
+    org_id and key_id.
+```
+
+### Edge Function
+
+`api-gateway` deployed with `--no-verify-jwt` because Intellistrata sends an API key, not a Supabase JWT. JWT verification disabled at the Supabase function level. The function validates the API key itself.
+
+### Security
+
+```
+→ Keys stored as SHA-256 hashes only — plain text never
+  stored after generation
+→ Plain key shown once at generation time
+→ All requests validated before any action
+→ Org isolation enforced — API key only accesses data
+  belonging to its org
+→ Cannot access other orgs' data
+→ Keys can be revoked instantly via f_revoke_api_key or
+  by setting is_active = false in api_keys table
+```
+
+### Known Limitations (not yet built)
+
+```
+→ Outbound webhook delivery: when a call completes, the
+  platform should POST results to registered webhook URLs.
+  Table and registration API are built; delivery logic in
+  process-call-webhook not yet implemented. Est: 1 day.
+
+→ API key management UI: admins should generate, view and
+  revoke keys from the Profile page. Currently SQL only.
+  Est: 1 day.
+
+→ Rate limiting: no per-key rate limiting implemented yet.
+  Recommended before production B2B use.
+
+→ Idempotency keys: no duplicate prevention on
+  campaign/contact creation. If Intellistrata retries a
+  failed request, a duplicate may be created.
 ```
 
 ---

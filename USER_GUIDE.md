@@ -627,6 +627,7 @@ The system checks your remaining call minutes **before** sending any calls to co
 - Your current usage is always visible in the sidebar (**Call Minutes** progress bar at the bottom of the left menu).
 - The bar turns **amber** at 80% usage and **red** when the limit is reached.
 - Call minutes reset on the **1st of each calendar month**.
+- When call minutes exceed your plan's included allowance, an estimated overage cost is shown below the progress bar in the sidebar. This updates in real time as calls complete.
 
 #### Other limits
 
@@ -656,6 +657,9 @@ If you are on the Free plan and your call minutes are exhausted, the Launch butt
 2. A dialog will appear: **Add Payment Method**.
 3. Enter your card details (card number, expiry, CVC).
 4. Click **Save Card**.
+
+   Once your card is saved, it is automatically set as your default payment method for all future invoices. You will not be charged until the end of the month when Stripe calculates your total minutes used.
+
 5. Your card is saved securely via Stripe — no charge is made at this point.
 6. Click **Launch** again — your campaign will now proceed.
 
@@ -666,7 +670,7 @@ If you are on the Free plan and your call minutes are exhausted, the Launch butt
 - You will receive a monthly invoice from Stripe at the end of each billing period.
 - The invoice shows your total overage usage for the month.
 
-⚠️ **Note:** Your card details are never stored on our servers. All card handling is done securely by Stripe.
+⚠️ **Note:** Your card details are stored and managed securely by Stripe. We never store card numbers on our servers. Your saved card will be used automatically for monthly call minutes invoices.
 
 ---
 
@@ -677,6 +681,8 @@ If you are on the Free plan and your call minutes are exhausted, the Launch butt
 3. Click **Upgrade** (or **Change Plan**) next to the plan you want.
 4. Follow the payment steps to complete the upgrade.
 5. Your new plan limits take effect immediately after payment.
+
+**Billing History** — past invoices are shown in the Billing History section. Click the download button on any invoice to open or save a PDF copy. Invoices appear after each billing cycle completes.
 
 **Billing history** is also available on the Subscriptions page. Each invoice shows:
 
@@ -814,6 +820,53 @@ The Team Members table shows three status types:
 | **Active** | Green | Member has accepted their invite and can log in. |
 | **Pending** | Amber | Invite sent but not yet accepted. You can revoke this at any time. |
 | **Removed** | Grey | Member was removed by an admin. Can be re-added via invite. |
+
+---
+
+## API Access
+
+The platform provides a REST API for programmatic access and B2B integrations. This allows external systems like Intellistrata to create contacts, launch campaigns, and receive call results automatically without using the web interface.
+
+---
+
+### Getting an API Key
+
+API keys are managed by your organisation admin. To get a key:
+
+1. Contact your platform administrator.
+2. They will generate a key for your integration.
+3. Store the key securely — it is shown only once and cannot be retrieved again.
+4. Include the key in all API requests:
+   ```
+   Authorization: Bearer ak_live_xxx
+   ```
+
+---
+
+### What the API Can Do
+
+- Create and manage contacts.
+- Create and launch campaigns.
+- Check campaign status and call progress.
+- Retrieve call logs and outcomes.
+- Register webhook URLs to receive automatic call completion notifications.
+
+---
+
+### Webhooks
+
+Register a webhook URL to receive automatic notifications when calls complete. Your system receives a POST request with the call outcome, transcript, and collected data immediately after each call finishes.
+
+Webhook payloads are signed so you can verify they came from this platform. Save the signing secret when you register your webhook — it is shown only once.
+
+---
+
+### Security
+
+- Keep your API key secret — treat it like a password.
+- Never include it in frontend/browser code.
+- If compromised, contact your admin to revoke it immediately.
+- Each key only accesses your own organisation's data.
 
 ---
 

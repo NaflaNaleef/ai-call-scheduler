@@ -49,10 +49,12 @@ interface Plan {
 
 interface BillingRecord {
   id: string;
-  plan: string;
-  amount: string;
-  status: "paid" | "pending" | "failed";
-  date: string;
+  date: number;
+  amount: number;
+  currency: string;
+  status: string;
+  pdf_url: string | null;
+  hosted_url: string | null;
 }
 
 // ── Mock Data ─────────────────────────────────────────────────────────────────
@@ -104,14 +106,6 @@ const plans: Plan[] = [
   },
 ];
 
-const mockBilling: BillingRecord[] = [
-  { id: "INV-2026-02", plan: "Pro", amount: "$79.00", status: "paid", date: "2026-02-01" },
-  { id: "INV-2026-01", plan: "Pro", amount: "$79.00", status: "paid", date: "2026-01-01" },
-  { id: "INV-2025-12", plan: "Pro", amount: "$79.00", status: "paid", date: "2025-12-01" },
-  { id: "INV-2025-11", plan: "Starter", amount: "$29.00", status: "paid", date: "2025-11-01" },
-  { id: "INV-2025-10", plan: "Starter", amount: "$29.00", status: "failed", date: "2025-10-01" },
-  { id: "INV-2025-10B", plan: "Starter", amount: "$29.00", status: "paid", date: "2025-10-05" },
-];
 
 const BILLING_PAGE_SIZE = 4;
 
@@ -157,11 +151,11 @@ const planIdMap: Record<string, string> = {
   'Business': 'business'
 };
 
-const billingStatusVariant: Record<BillingRecord["status"], "success" | "warning" | "error"> = {
-  paid: "success",
-  pending: "warning",
-  failed: "error",
-};
+function billingStatusVariant(status: string): "success" | "warning" | "default" {
+  if (status === "paid") return "success";
+  if (status === "open") return "warning";
+  return "default";
+}
 
 // ── Main Component ────────────────────────────────────────────────────────────
 
@@ -170,6 +164,7 @@ export default function SubscriptionsPage() {
   const { user } = useAuth();
   const [subData, setSubData] = useState<any>(null);
   const [subLoading, setSubLoading] = useState(true);
+  const [billingRecords, setBillingRecords] = useState<BillingRecord[]>([]);
 
   // Current plan state
   const [planStatus] = useState<PlanStatus>("Active");
@@ -197,8 +192,20 @@ export default function SubscriptionsPage() {
     }
   }
 
+  async function fetchInvoices() {
+    try {
+      const { data, error } = await supabase.functions.invoke('get-invoices');
+      if (error) throw error;
+      setBillingRecords(data?.invoices || []);
+    } catch (err) {
+      console.error('Error fetching invoices:', err);
+      // Non-fatal — show empty state
+    }
+  }
+
   useEffect(() => {
     fetchSubscription();
+    fetchInvoices();
 
     // Real-time updates when usage changes
     if (!user?.org_id) return;
@@ -266,9 +273,8 @@ export default function SubscriptionsPage() {
   const minutesPct = Math.round((usage.minutes.used / usage.minutes.limit) * 100);
 
   // Billing table
-  const billingData = isFree ? [] : mockBilling;
-  const totalBillingPages = Math.max(1, Math.ceil(billingData.length / BILLING_PAGE_SIZE));
-  const billingPaginated = billingData.slice(
+  const totalBillingPages = Math.max(1, Math.ceil(billingRecords.length / BILLING_PAGE_SIZE));
+  const billingPaginated = billingRecords.slice(
     (billingPage - 1) * BILLING_PAGE_SIZE,
     billingPage * BILLING_PAGE_SIZE
   );
@@ -339,27 +345,42 @@ export default function SubscriptionsPage() {
         <span className="font-mono text-xs">{item.id}</span>
       ),
     },
-    { key: "plan", header: "Plan" },
-    { key: "amount", header: "Amount" },
+    {
+      key: "date",
+      header: "Billing Date",
+      render: (item: BillingRecord) => (
+        <span>{new Date(item.date * 1000).toLocaleDateString()}</span>
+      ),
+    },
+    {
+      key: "amount",
+      header: "Amount",
+      render: (item: BillingRecord) => (
+        <span>${(item.amount / 100).toFixed(2)} AUD</span>
+      ),
+    },
     {
       key: "status",
       header: "Status",
       render: (item: BillingRecord) => (
-        <StatusBadge variant={billingStatusVariant[item.status]}>{item.status}</StatusBadge>
+        <StatusBadge variant={billingStatusVariant(item.status)}>{item.status}</StatusBadge>
       ),
     },
-    { key: "date", header: "Billing Date" },
     {
       key: "download",
       header: "",
-      render: (_item: BillingRecord) => (
+      render: (item: BillingRecord) => (
         <Button
           variant="ghost"
           size="sm"
           className="h-7 text-xs gap-1"
           onClick={(e) => {
             e.stopPropagation();
-            toast({ title: "Invoice download coming soon" });
+            if (item.pdf_url) {
+              window.open(item.pdf_url, '_blank');
+            } else if (item.hosted_url) {
+              window.open(item.hosted_url, '_blank');
+            }
           }}
         >
           <Download className="h-3.5 w-3.5" />
@@ -468,16 +489,11 @@ export default function SubscriptionsPage() {
             <p className="text-sm text-muted-foreground mt-0.5">Download invoices for your records.</p>
           </div>
           <div className="p-6">
-            {isFree || billingData.length === 0 ? (
+            {billingRecords.length === 0 ? (
               <EmptyState
                 icon={<CreditCard className="h-6 w-6" />}
-                title="No billing history"
-                description="You are on the Free plan. Upgrade to a paid plan to see your billing history and download invoices."
-                action={
-                  <Button size="sm" onClick={() => { setSuccessBanner(false); setUpgradeModalOpen(true); }}>
-                    Upgrade Plan
-                  </Button>
-                }
+                title="No invoices yet"
+                description="Invoices will appear here after your first billing cycle."
               />
             ) : (
               <>

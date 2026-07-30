@@ -2088,13 +2088,13 @@ export default function CampaignsPage() {
     subscription.max_campaigns === -1 || 
     subscription.campaigns_count < subscription.max_campaigns;
 
-  const callMinutesExhausted = subscription &&
-    subscription.call_minutes_used >= subscription.max_call_minutes_per_month;
-
   const needsPaymentMethod =
     subscription?.plan_id === 'free' &&
-    !subscription?.stripe_customer_id &&
-    !!callMinutesExhausted;
+    !subscription?.stripe_customer_id;
+
+  const callMinutesExhausted = subscription &&
+    subscription?.plan_id !== 'free' &&
+    subscription.call_minutes_used >= subscription.max_call_minutes_per_month;
 
   const [showAddCard, setShowAddCard] = useState(false);
 
