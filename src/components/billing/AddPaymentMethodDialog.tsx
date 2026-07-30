@@ -21,10 +21,12 @@ const stripePromise = loadStripe(
 
 function CardForm({
   clientSecret,
+  customerId,
   onSuccess,
   onCancel,
 }: {
   clientSecret: string
+  customerId: string
   onSuccess: () => void
   onCancel: () => void
 }) {
@@ -57,7 +59,10 @@ function CardForm({
 
       if (setupIntent?.status === 'succeeded') {
         await supabase.functions.invoke('confirm-payment-method', {
-          body: { payment_method_id: setupIntent.payment_method },
+          body: {
+            payment_method_id: setupIntent.payment_method,
+            customer_id: customerId,
+          },
         })
         // Non-fatal if this fails — card is saved in Stripe
         // f_check_org_limit checks stripe_customer_id which
@@ -126,6 +131,7 @@ export function AddPaymentMethodDialog({
   onSuccess: () => void
 }) {
   const [clientSecret, setClientSecret] = useState<string | null>(null)
+  const [customerId, setCustomerId] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const { toast } = useToast()
 
@@ -141,6 +147,7 @@ export function AddPaymentMethodDialog({
         const { data, error } = await supabase.functions.invoke('create-setup-intent')
         if (error) throw error
         setClientSecret(data.client_secret)
+        setCustomerId(data.customer_id)
       } catch (err: any) {
         toast({
           title: 'Error',
@@ -180,6 +187,7 @@ export function AddPaymentMethodDialog({
           <Elements stripe={stripePromise} options={{ clientSecret }}>
             <CardForm
               clientSecret={clientSecret}
+              customerId={customerId || ''}
               onSuccess={() => {
                 onOpenChange(false)
                 onSuccess()
