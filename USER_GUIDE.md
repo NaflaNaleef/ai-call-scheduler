@@ -831,15 +831,18 @@ The platform provides a REST API for programmatic access and B2B integrations. T
 
 ### Getting an API Key
 
-API keys are managed by your organisation admin. To get a key:
+API keys are managed by your organisation admin. To generate a key:
 
-1. Contact your platform administrator.
-2. They will generate a key for your integration.
-3. Store the key securely — it is shown only once and cannot be retrieved again.
-4. Include the key in all API requests:
-   ```
-   Authorization: Bearer ak_live_xxx
-   ```
+1. Go to **Profile → API Keys** tab.
+2. Enter a name for the key (e.g. Intellistrata Production).
+3. Click **Generate Key**.
+4. Copy the key immediately — it will not be shown again.
+5. Store it securely and share only with your development team.
+
+Include the key in all API requests:
+```
+Authorization: Bearer ak_live_xxx
+```
 
 ---
 
@@ -853,11 +856,37 @@ API keys are managed by your organisation admin. To get a key:
 
 ---
 
+### Managing API Keys
+
+To view your API keys:
+- Go to **Profile → API Keys** tab.
+- All keys are listed with their status (Active or Revoked) and last used date.
+
+To revoke a key:
+- Click the **Revoke** button next to the key.
+- The key stops working immediately.
+- Generate a new key if needed.
+
+**Note:** Only the key prefix is shown in the list (e.g. `ak_live_xxxxxxxx...`). The full key is only visible once when first generated.
+
+---
+
 ### Webhooks
 
 Register a webhook URL to receive automatic notifications when calls complete. Your system receives a POST request with the call outcome, transcript, and collected data immediately after each call finishes.
 
 Webhook payloads are signed so you can verify they came from this platform. Save the signing secret when you register your webhook — it is shown only once.
+
+### What you receive in a webhook
+
+When a call completes your registered URL receives a POST request with:
+- Call status (Answered / Failed / Voicemail / Busy / No Answer)
+- Call duration in seconds
+- Data collected during the call
+- Full transcript of the conversation
+- Timestamp of when the call completed
+
+Each request includes a signature header (`X-Webhook-Signature`) so you can verify it came from this platform using your webhook secret.
 
 ---
 
