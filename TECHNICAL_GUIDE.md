@@ -1417,6 +1417,8 @@ Database:   No automated rollback — keep rollback SQL ready
 | 29 | Free plan UI fix — `callMinutesExhausted` and `needsPaymentMethod` logic corrected | FIXED: `callMinutesExhausted` now correctly excludes free plan (`plan_id !== 'free'`) so free plan users always see the Add Payment Method dialog instead of the generic upgrade message. `needsPaymentMethod` no longer depends on `callMinutesExhausted` — it simply checks `plan_id === 'free'` and no `stripe_customer_id`. |
 | 30 | Invoice history | Subscriptions page now fetches real Stripe invoices via `get-invoices` edge function. Download links open Stripe's hosted PDF. Empty state shown when no invoices exist yet. Mock billing data removed. |
 | 31 | Overage cost display | Sidebar now shows estimated overage cost below the Call Minutes progress bar when a paid plan user exceeds their included minutes. Calculated as: `max(0, minutes_used − included_minutes) × overage_rate_per_minute` from the plans table. Updates in real time as usage changes. |
+| 32 | Outbound webhook delivery implemented | `process-call-webhook` now checks `webhook_subscriptions` after each call and POSTs a signed payload to all registered URLs. Payload signed with HMAC-SHA256. Headers: `X-Webhook-Signature: sha256=...` and `X-Webhook-Event: call.completed`. Delivery is non-fatal. |
+| 33 | API key management UI implemented | Profile → API Keys tab allows admins to generate, copy, and revoke API keys without SQL access. Generated key is shown once with a copy button. Revoked keys show as inactive immediately. |
 
 **Verification query used for #7 and #8 (re-run if auditing function grants again):**
 ```sql
@@ -1903,17 +1905,63 @@ f_validate_api_key(api_key)
   by setting is_active = false in api_keys table
 ```
 
+### Outbound Webhook Payload
+
+When a call completes, the platform POSTs this payload to all registered webhook URLs:
+
+```json
+{
+  "event": "call.completed",
+  "call_log_id": "uuid",
+  "campaign_id": "uuid",
+  "contact_id": "uuid",
+  "status": "ANSWERED|FAILED|VOICEMAIL|BUSY|NO_ANSWER",
+  "call_duration": 120,
+  "collected_data": {
+    "disposition": "...",
+    "call_outcome": "...",
+    "answered_by": "human|voicemail|unknown"
+  },
+  "transcript_text": "Hello...",
+  "timestamp": "2026-07-31T00:00:00.000Z"
+}
+```
+
+**Headers sent with every delivery:**
+```
+Content-Type: application/json
+X-Webhook-Signature: sha256=<hmac_hex>
+X-Webhook-Event: call.completed
+```
+
+**Verifying the signature (example):**
+```javascript
+const hmac = crypto.createHmac('sha256', webhookSecret)
+hmac.update(rawBody)
+const expected = 'sha256=' + hmac.digest('hex')
+const isValid = expected === req.headers['x-webhook-signature']
+```
+
+Delivery is non-fatal — if delivery fails, call processing continues normally. No retry logic currently implemented.
+
+---
+
 ### Known Limitations (not yet built)
 
 ```
-→ Outbound webhook delivery: when a call completes, the
-  platform should POST results to registered webhook URLs.
-  Table and registration API are built; delivery logic in
-  process-call-webhook not yet implemented. Est: 1 day.
+→ Outbound webhook delivery: COMPLETED.
+  When a call completes, process-call-webhook checks
+  webhook_subscriptions for the org, and POSTs the call
+  result to each registered URL. Payload is signed with
+  HMAC-SHA256.
+  Header: X-Webhook-Signature: sha256=...
+  Header: X-Webhook-Event: call.completed
 
-→ API key management UI: admins should generate, view and
-  revoke keys from the Profile page. Currently SQL only.
-  Est: 1 day.
+→ API key management UI: COMPLETED.
+  Admins can generate, view and revoke API keys from
+  Profile → API Keys tab. Generated key is shown once
+  with a copy button and cannot be retrieved again.
+  Revoked keys show as inactive immediately.
 
 → Rate limiting: no per-key rate limiting implemented yet.
   Recommended before production B2B use.

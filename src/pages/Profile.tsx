@@ -9,7 +9,8 @@ import { useState } from "react";
 import {
   User, Mail, Phone, Shield, Eye, EyeOff, Loader2,
   Monitor, Smartphone, Globe, Clock, CheckCircle,
-  AlertTriangle, LogOut, Link2, Unlink, RefreshCw, UserPlus
+  AlertTriangle, LogOut, Link2, Unlink, RefreshCw,
+  UserPlus, Key, Copy, Trash2
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
@@ -141,6 +142,21 @@ export default function ProfilePage() {
   const [manageAction, setManageAction] = useState<'revoke' | 'remove' | null>(null);
   const [manageLoading, setManageLoading] = useState(false);
 
+  interface ApiKey {
+    id: string
+    name: string
+    key_prefix: string
+    is_active: boolean
+    last_used_at: string | null
+    created_at: string
+  }
+
+  const [apiKeys, setApiKeys] = useState<ApiKey[]>([])
+  const [apiKeysLoading, setApiKeysLoading] = useState(false)
+  const [newKeyName, setNewKeyName] = useState('')
+  const [generatingKey, setGeneratingKey] = useState(false)
+  const [generatedKey, setGeneratedKey] = useState<string | null>(null)
+
   useEffect(() => {
     if (!isAdmin || !user?.org_id) return;
     setMembersLoading(true);
@@ -151,6 +167,17 @@ export default function ProfilePage() {
         setMembersLoading(false);
       });
   }, [isAdmin, user?.org_id, membersKey]);
+
+  useEffect(() => {
+    if (!isAdmin || !user?.org_id) return
+    setApiKeysLoading(true)
+    supabase
+      .rpc('f_get_api_keys', { p_org_id: user.org_id })
+      .then(({ data, error }) => {
+        if (!error) setApiKeys((data as ApiKey[]) || [])
+        setApiKeysLoading(false)
+      })
+  }, [isAdmin, user?.org_id])
 
   const handleInvite = async () => {
     if (!inviteEmail.trim()) return;
@@ -198,6 +225,62 @@ export default function ProfilePage() {
       setManageLoading(false);
     }
   };
+
+  const handleGenerateKey = async () => {
+    if (!newKeyName.trim() || !user?.org_id) return
+    setGeneratingKey(true)
+    try {
+      const { data, error } = await supabase
+        .rpc('f_create_api_key', {
+          p_org_id: user.org_id,
+          p_name: newKeyName.trim()
+        })
+      if (error) throw error
+      const key = data?.[0]?.api_key
+      setGeneratedKey(key)
+      setNewKeyName('')
+      const { data: keys } = await supabase
+        .rpc('f_get_api_keys', { p_org_id: user.org_id })
+      setApiKeys((keys as ApiKey[]) || [])
+      toast({
+        title: 'API key generated',
+        description: 'Copy the key now — it will not be shown again.'
+      })
+    } catch (err: any) {
+      toast({
+        title: 'Failed to generate key',
+        description: err.message || 'An error occurred.',
+        variant: 'destructive'
+      })
+    } finally {
+      setGeneratingKey(false)
+    }
+  }
+
+  const handleRevokeKey = async (keyId: string) => {
+    if (!user?.org_id) return
+    try {
+      const { error } = await supabase
+        .rpc('f_revoke_api_key', {
+          p_key_id: keyId,
+          p_org_id: user.org_id
+        })
+      if (error) throw error
+      setApiKeys(prev =>
+        prev.map(k => k.id === keyId
+          ? { ...k, is_active: false }
+          : k
+        )
+      )
+      toast({ title: 'API key revoked' })
+    } catch (err: any) {
+      toast({
+        title: 'Failed to revoke key',
+        description: err.message || 'An error occurred.',
+        variant: 'destructive'
+      })
+    }
+  }
 
   const formatMemberDate = (dateStr: string) => {
     try {
@@ -403,6 +486,7 @@ export default function ProfilePage() {
             <TabsTrigger value="connections">Connected Accounts</TabsTrigger>
             <TabsTrigger value="activity">Activity Log</TabsTrigger>
             {isAdmin && <TabsTrigger value="team">Team Members</TabsTrigger>}
+            {isAdmin && <TabsTrigger value="apikeys">API Keys</TabsTrigger>}
           </TabsList>
 
           {/* Security Tab */}
@@ -737,6 +821,112 @@ export default function ProfilePage() {
               </div>
             </TabsContent>
           )}
+
+          {/* API Keys Tab — admin only */}
+          {isAdmin && (
+            <TabsContent value="apikeys" className="mt-4">
+              <div className="bg-card rounded-lg border border-border p-6 shadow-sm space-y-5">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-lg font-semibold">API Keys</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Generate API keys for external integrations. Keys are shown only once when created.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Generate new key */}
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Key name e.g. Intellistrata Production"
+                    value={newKeyName}
+                    onChange={(e) => setNewKeyName(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleGenerateKey() }}
+                    className="flex-1"
+                  />
+                  <Button
+                    onClick={handleGenerateKey}
+                    disabled={!newKeyName.trim() || generatingKey}
+                  >
+                    {generatingKey
+                      ? <><Loader2 className="h-4 w-4 animate-spin mr-1.5" />Generating…</>
+                      : <><Key className="h-4 w-4 mr-1.5" />Generate Key</>
+                    }
+                  </Button>
+                </div>
+
+                {/* Keys list */}
+                {apiKeysLoading ? (
+                  <div className="flex justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  </div>
+                ) : apiKeys.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-8">
+                    No API keys yet. Generate one above.
+                  </p>
+                ) : (
+                  <div className="rounded-lg border border-border overflow-hidden">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Name</TableHead>
+                          <TableHead>Key</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Last Used</TableHead>
+                          <TableHead>Created</TableHead>
+                          <TableHead>Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {apiKeys.map((k) => (
+                          <TableRow key={k.id}>
+                            <TableCell className="font-medium">{k.name}</TableCell>
+                            <TableCell>
+                              <code className="text-xs bg-muted px-2 py-1 rounded font-mono">
+                                {k.key_prefix}
+                              </code>
+                            </TableCell>
+                            <TableCell>
+                              <Badge
+                                variant="outline"
+                                className={k.is_active
+                                  ? "border-green-500/30 text-green-600 bg-green-500/5"
+                                  : "border-border text-muted-foreground"
+                                }
+                              >
+                                {k.is_active ? 'Active' : 'Revoked'}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-sm text-muted-foreground">
+                              {k.last_used_at ? formatMemberDate(k.last_used_at) : 'Never'}
+                            </TableCell>
+                            <TableCell className="text-sm text-muted-foreground">
+                              {formatMemberDate(k.created_at)}
+                            </TableCell>
+                            <TableCell>
+                              {k.is_active ? (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 text-xs text-destructive border-destructive/30 hover:bg-destructive/5"
+                                  onClick={() => handleRevokeKey(k.id)}
+                                >
+                                  <Trash2 className="h-3 w-3 mr-1" />
+                                  Revoke
+                                </Button>
+                              ) : (
+                                <span className="text-xs text-muted-foreground italic">Revoked</span>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </div>
+            </TabsContent>
+          )}
         </Tabs>
       </div>
 
@@ -847,6 +1037,44 @@ export default function ProfilePage() {
                 ? <><Loader2 className="h-4 w-4 animate-spin" /> Processing…</>
                 : manageAction === 'revoke' ? 'Revoke' : 'Remove'}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Generated API Key Dialog */}
+      <Dialog open={!!generatedKey} onOpenChange={(o) => { if (!o) setGeneratedKey(null) }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Key className="h-5 w-5" />
+              API Key Generated
+            </DialogTitle>
+            <DialogDescription>
+              Copy this key now. It will not be shown again after you close this dialog.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="flex items-center gap-2">
+              <code className="flex-1 text-xs bg-muted px-3 py-2 rounded font-mono break-all">
+                {generatedKey}
+              </code>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  navigator.clipboard.writeText(generatedKey || '')
+                  toast({ title: 'Copied', description: 'API key copied to clipboard.' })
+                }}
+              >
+                <Copy className="h-4 w-4" />
+              </Button>
+            </div>
+            <p className="text-xs text-destructive font-medium">
+              ⚠️ This key will not be shown again. Store it securely.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setGeneratedKey(null)}>I have copied the key</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
