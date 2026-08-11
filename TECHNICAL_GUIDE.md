@@ -1973,5 +1973,70 @@ Delivery is non-fatal — if delivery fails, call processing continues normally.
 
 ---
 
+## 16. Changelog & What's New
+
+### Overview
+An in-app changelog system that notifies
+users of new features and updates via a
+slide-out panel connected to the Bell icon
+in the header.
+
+### How it works
+→ Super admin publishes changelog entries
+  from the Super Admin page
+→ Bell icon in header shows a red dot
+  when there are unread entries
+→ User clicks bell → slide-out panel opens
+  showing all published entries
+→ Red dot disappears after viewing
+→ "Last seen" tracked in localStorage
+  per browser session
+
+### Database Table
+changelog:
+- id (uuid)
+- title (text) — feature name
+- description (text) — what changed
+- release_date (date) — shown grouped by month
+- is_published (boolean) — draft or live
+- created_at, updated_at (timestamptz)
+
+RLS:
+→ authenticated users can read published entries
+→ authenticated users can insert entries
+  (restricted to super admin via UI only)
+
+### Components Added
+ChangelogPanel (src/components/layout/ChangelogPanel.tsx):
+→ Slide-out panel from right side of screen
+→ Fetches published entries from changelog table
+→ Groups entries by month
+→ Shows "New" badge on most recent entry
+→ Marks as read via localStorage on open
+
+useChangelogUnread hook:
+→ Checks if latest changelog entry is newer
+  than localStorage last_seen timestamp
+→ Returns hasUnread boolean for bell dot
+
+### Super Admin Management
+Super Admin page → What's New section:
+→ View all changelog entries with status
+→ Add Entry form:
+  - Title
+  - Description
+  - Release date (defaults to today)
+  - Publishes immediately (is_published = true)
+
+### User Experience
+→ New user → red dot always shows
+  (no localStorage entry yet)
+→ After viewing → red dot disappears
+→ New entry published → red dot reappears
+  for all users on next page load
+→ Panel closes when clicking outside
+
+---
+
 *AI Call Scheduler Technical Documentation v1.0 — July 2026*
 *Last updated: July 2026 — added security remediation log (Vault migration, search_path fixes, anon/authenticated SECURITY DEFINER review), orphaned function findings, Intellistrata API/webhook requirements, Stripe test mode credentials status, send-invite edge function, f_super_admin_get_all_orgs RPC, BLOCKED campaign run status, corrected NO_ANSWER Bland AI classification, RBAC documentation (Section 12), Team Invitation Flow (Section 13), team member management (pending status, revoke, remove, reactivation), super admin editable fields (name, plan, active status, usage reset), metered billing architecture (Section 14), create-setup-intent edge function, free plan PAYG flow, f_check_org_limit metered billing logic.*

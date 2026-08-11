@@ -823,6 +823,29 @@ The Team Members table shows three status types:
 
 ---
 
+## What's New
+
+The platform has a built-in changelog to
+keep you updated on new features and changes.
+
+### How to access
+Click the Bell icon (🔔) in the top right
+corner of any page.
+
+A red dot on the bell means there are
+updates you haven't seen yet.
+
+### What you'll see
+→ Latest features and improvements
+→ Grouped by release month
+→ Most recent update marked as "New"
+
+The red dot disappears after you open
+the panel and will reappear when new
+updates are published.
+
+---
+
 ## API Access
 
 The platform provides a REST API for programmatic access and B2B integrations. This allows external systems like Intellistrata to create contacts, launch campaigns, and receive call results automatically without using the web interface.
