@@ -165,18 +165,18 @@ export function useChangelogUnread() {
     const lastSeen = localStorage.getItem(STORAGE_KEY)
     supabase
       .from('changelog')
-      .select('release_date')
+      .select('updated_at')
       .eq('is_published', true)
-      .order('release_date', { ascending: false })
+      .order('updated_at', { ascending: false })
       .limit(1)
       .then(({ data }) => {
         if (!data || data.length === 0) return
-        const latestDate = new Date(data[0].release_date)
+        const latestUpdate = new Date(data[0].updated_at)
         if (!lastSeen) {
           setHasUnread(true)
           return
         }
-        setHasUnread(latestDate > new Date(lastSeen))
+        setHasUnread(latestUpdate > new Date(lastSeen))
       })
   }, [])
 

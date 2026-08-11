@@ -123,6 +123,34 @@ export default function SuperAdminPage() {
     }
   };
 
+  const handleToggleEntry = async (id: string, currentStatus: boolean) => {
+    try {
+      const { error } = await supabase
+        .from('changelog')
+        .update({ is_published: !currentStatus })
+        .eq('id', id);
+      if (error) throw error;
+      setChangelogEntries(prev =>
+        prev.map(e => e.id === id
+          ? { ...e, is_published: !currentStatus }
+          : e
+        )
+      );
+      toast({
+        title: currentStatus ? 'Entry unpublished' : 'Entry published',
+        description: currentStatus
+          ? 'Entry hidden from users.'
+          : 'Entry now visible to users.'
+      });
+    } catch (err: any) {
+      toast({
+        title: 'Failed to update',
+        description: err.message,
+        variant: 'destructive'
+      });
+    }
+  };
+
   useEffect(() => {
     async function fetchOrgs() {
       try {
@@ -462,15 +490,29 @@ export default function SuperAdminPage() {
                     {entry.release_date}
                   </p>
                 </div>
-                <Badge
-                  variant="outline"
-                  className={entry.is_published
-                    ? "border-green-500/30 text-green-600"
-                    : "border-border text-muted-foreground"
-                  }
-                >
-                  {entry.is_published ? 'Published' : 'Draft'}
-                </Badge>
+                <div className="flex items-center gap-2">
+                  <Badge
+                    variant="outline"
+                    className={entry.is_published
+                      ? "border-green-500/30 text-green-600"
+                      : "border-border text-muted-foreground"
+                    }
+                  >
+                    {entry.is_published ? 'Published' : 'Draft'}
+                  </Badge>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className={`h-7 text-xs ${
+                      entry.is_published
+                        ? 'text-destructive border-destructive/30 hover:bg-destructive/5'
+                        : 'text-green-600 border-green-500/30 hover:bg-green-500/5'
+                    }`}
+                    onClick={() => handleToggleEntry(entry.id, entry.is_published)}
+                  >
+                    {entry.is_published ? 'Unpublish' : 'Publish'}
+                  </Button>
+                </div>
               </div>
             ))
           )}
