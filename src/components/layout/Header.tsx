@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Menu, Bell, Search, UserCircle, Settings, LogOut, CreditCard } from "lucide-react";
 import { useNavigate, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -11,6 +12,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/contexts/AuthContext";
+import { ChangelogPanel, useChangelogUnread } from "./ChangelogPanel";
 
 // Mock current plan — in a real app this would come from a context/store
 const MOCK_CURRENT_PLAN = "Pro";
@@ -23,6 +25,8 @@ interface HeaderProps {
 export function Header({ onMenuClick, title }: HeaderProps) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const [changelogOpen, setChangelogOpen] = useState(false);
+  const { hasUnread, setHasUnread } = useChangelogUnread();
 
   function handleLogout() {
     logout();
@@ -47,9 +51,16 @@ export function Header({ onMenuClick, title }: HeaderProps) {
         <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground">
           <Search className="h-4 w-4" />
         </Button>
-        <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground relative">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="text-muted-foreground hover:text-foreground relative"
+          onClick={() => setChangelogOpen(true)}
+        >
           <Bell className="h-4 w-4" />
-          <span className="absolute top-2 right-2 w-2 h-2 bg-destructive rounded-full" />
+          {hasUnread && (
+            <span className="absolute top-2 right-2 w-2 h-2 bg-destructive rounded-full" />
+          )}
         </Button>
 
         {/* User dropdown */}
@@ -108,6 +119,12 @@ export function Header({ onMenuClick, title }: HeaderProps) {
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+
+      <ChangelogPanel
+        open={changelogOpen}
+        onClose={() => setChangelogOpen(false)}
+        onRead={() => setHasUnread(false)}
+      />
     </header>
   );
 }

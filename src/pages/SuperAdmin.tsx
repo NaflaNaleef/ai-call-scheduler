@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabase";
 import { Loader2, AlertCircle, Info, Pencil } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableHeader,
@@ -62,6 +63,65 @@ export default function SuperAdminPage() {
   const { toast } = useToast();
   const [editState, setEditState] = useState<EditState | null>(null);
   const [saving, setSaving] = useState(false);
+
+  const [changelogEntries, setChangelogEntries] = useState<any[]>([]);
+  const [newEntry, setNewEntry] = useState({
+    title: '',
+    description: '',
+    release_date: new Date().toISOString().split('T')[0]
+  });
+  const [addingEntry, setAddingEntry] = useState(false);
+  const [showAddEntry, setShowAddEntry] = useState(false);
+
+  useEffect(() => {
+    supabase
+      .from('changelog')
+      .select('*')
+      .order('release_date', { ascending: false })
+      .then(({ data }) => {
+        setChangelogEntries(data || []);
+      });
+  }, []);
+
+  const handleAddEntry = async () => {
+    if (!newEntry.title.trim() || !newEntry.description.trim()) return;
+    setAddingEntry(true);
+    try {
+      const { error } = await supabase
+        .from('changelog')
+        .insert({
+          title: newEntry.title.trim(),
+          description: newEntry.description.trim(),
+          release_date: newEntry.release_date,
+          is_published: true
+        });
+      if (error) throw error;
+      toast({
+        title: 'Entry published',
+        description: 'Changelog updated successfully.'
+      });
+      setNewEntry({
+        title: '',
+        description: '',
+        release_date: new Date().toISOString().split('T')[0]
+      });
+      setShowAddEntry(false);
+      // Refresh list
+      const { data } = await supabase
+        .from('changelog')
+        .select('*')
+        .order('release_date', { ascending: false });
+      setChangelogEntries(data || []);
+    } catch (err: any) {
+      toast({
+        title: 'Failed to publish',
+        description: err.message,
+        variant: 'destructive'
+      });
+    } finally {
+      setAddingEntry(false);
+    }
+  };
 
   useEffect(() => {
     async function fetchOrgs() {
@@ -328,6 +388,94 @@ export default function SuperAdminPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <div className="bg-card rounded-xl border border-border shadow-sm mt-6">
+        <div className="px-6 py-4 border-b border-border flex items-center justify-between">
+          <div>
+            <h3 className="text-base font-semibold">
+              What's New
+            </h3>
+            <p className="text-sm text-muted-foreground">
+              Manage changelog entries shown to users.
+            </p>
+          </div>
+          <Button
+            size="sm"
+            onClick={() => setShowAddEntry(!showAddEntry)}
+          >
+            + Add Entry
+          </Button>
+        </div>
+
+        {showAddEntry && (
+          <div className="px-6 py-4 border-b border-border space-y-3">
+            <Input
+              placeholder="Title e.g. API Gateway"
+              value={newEntry.title}
+              onChange={e => setNewEntry(p => ({ ...p, title: e.target.value }))}
+            />
+            <textarea
+              placeholder="Description — what changed and how to use it"
+              value={newEntry.description}
+              onChange={e => setNewEntry(p => ({ ...p, description: e.target.value }))}
+              className="w-full rounded-md border border-input bg-background px-3 py-2
+                text-sm min-h-[80px] resize-none
+                focus:outline-none focus:ring-1 focus:ring-ring"
+            />
+            <Input
+              type="date"
+              value={newEntry.release_date}
+              onChange={e => setNewEntry(p => ({ ...p, release_date: e.target.value }))}
+            />
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                onClick={handleAddEntry}
+                disabled={addingEntry || !newEntry.title.trim()}
+              >
+                {addingEntry ? 'Publishing...' : 'Publish'}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setShowAddEntry(false)}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
+
+        <div className="divide-y divide-border">
+          {changelogEntries.length === 0 ? (
+            <p className="px-6 py-4 text-sm text-muted-foreground">
+              No entries yet.
+            </p>
+          ) : (
+            changelogEntries.map(entry => (
+              <div key={entry.id} className="px-6 py-3 flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm font-medium">
+                    {entry.title}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {entry.release_date}
+                  </p>
+                </div>
+                <Badge
+                  variant="outline"
+                  className={entry.is_published
+                    ? "border-green-500/30 text-green-600"
+                    : "border-border text-muted-foreground"
+                  }
+                >
+                  {entry.is_published ? 'Published' : 'Draft'}
+                </Badge>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
     </DashboardLayout>
   );
 }
