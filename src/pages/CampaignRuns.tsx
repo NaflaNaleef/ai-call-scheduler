@@ -52,6 +52,7 @@ interface CampaignRun {
   daysOfWeek?: string[];
   attemptNumber: number;
   parentRunId: string | null;
+  block_reason?: string | null;
 }
 
 interface CampaignContactRow {
@@ -134,7 +135,18 @@ export default function CampaignRunsPage() {
   const location = useLocation();
 
   const isMinutesBlocked = (run: any) =>
-    run.status?.toUpperCase() === 'BLOCKED';
+    run.status?.toUpperCase() === 'BLOCKED' &&
+    (!run.block_reason ||
+     run.block_reason.toLowerCase().includes('minute') ||
+     run.block_reason.toLowerCase().includes('limit') ||
+     run.block_reason.toLowerCase().includes('payment'));
+
+  const isPromptBlocked = (run: any) =>
+    run.status?.toUpperCase() === 'BLOCKED' &&
+    run.block_reason &&
+    !run.block_reason.toLowerCase().includes('minute') &&
+    !run.block_reason.toLowerCase().includes('limit') &&
+    !run.block_reason.toLowerCase().includes('payment');
 
   const [runs, setRuns] = useState<CampaignRun[]>([]);
   const [loading, setLoading] = useState(true);
@@ -206,6 +218,7 @@ export default function CampaignRunsPage() {
         daysOfWeek: r.days_of_week,
         attemptNumber: r.attempt_number ?? 1,
         parentRunId: r.parent_run_id,
+        block_reason: r.block_reason,
       }));
       setRuns(mapped);
       return mapped; // Return for chain usage if needed
@@ -743,6 +756,11 @@ export default function CampaignRunsPage() {
                                     : 'Upgrade your plan to relaunch.'}
                                 </div>
                               )}
+                              {isPromptBlocked(item) && (
+                                <div className="mt-1 text-[11px] text-warning leading-tight max-w-[200px]">
+                                  {item.block_reason}
+                                </div>
+                              )}
                             </td>
                             {isChild && item.status.toUpperCase() === 'PAUSED' ? (
                               <td colSpan={2} className="px-4 py-3 text-muted-foreground italic text-xs">
@@ -862,6 +880,11 @@ export default function CampaignRunsPage() {
                           <Link to="/subscriptions" className="underline font-medium">
                             Manage plan →
                           </Link>
+                        </div>
+                      )}
+                      {isPromptBlocked(activeRun) && (
+                        <div className="mt-1 text-xs text-warning text-right max-w-[200px]">
+                          {activeRun.block_reason}
                         </div>
                       )}
                     </div>
