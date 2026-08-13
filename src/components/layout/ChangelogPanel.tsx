@@ -3,6 +3,7 @@ import { X, Sparkles } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { supabase } from "@/lib/supabase"
 import { Badge } from "@/components/ui/badge"
+import { useAuth } from "@/contexts/AuthContext"
 
 interface ChangelogEntry {
   id: string
@@ -17,13 +18,12 @@ interface ChangelogPanelProps {
   onRead: () => void
 }
 
-const STORAGE_KEY = 'changelog_last_seen'
-
 export function ChangelogPanel({
   open, onClose, onRead
 }: ChangelogPanelProps) {
   const [entries, setEntries] = useState<ChangelogEntry[]>([])
   const [loading, setLoading] = useState(true)
+  const { user } = useAuth()
 
   useEffect(() => {
     if (!open) return
@@ -36,8 +36,11 @@ export function ChangelogPanel({
         setEntries(data || [])
         setLoading(false)
         // Mark as read
+        const userKey = user?.id
+          ? `changelog_last_seen_${user.id}`
+          : 'changelog_last_seen'
         localStorage.setItem(
-          STORAGE_KEY,
+          userKey,
           new Date().toISOString()
         )
         onRead()
@@ -160,25 +163,30 @@ export function ChangelogPanel({
 
 export function useChangelogUnread() {
   const [hasUnread, setHasUnread] = useState(false)
+  const { user } = useAuth()
+  const storageKey = user?.id
+    ? `changelog_last_seen_${user.id}`
+    : 'changelog_last_seen'
 
   useEffect(() => {
-    const lastSeen = localStorage.getItem(STORAGE_KEY)
+    if (!user?.id) return
+    const lastSeen = localStorage.getItem(storageKey)
     supabase
       .from('changelog')
-      .select('release_date')
+      .select('updated_at')
       .eq('is_published', true)
-      .order('release_date', { ascending: false })
+      .order('updated_at', { ascending: false })
       .limit(1)
       .then(({ data }) => {
         if (!data || data.length === 0) return
-        const latestDate = new Date(data[0].release_date)
+        const latestUpdate = new Date(data[0].updated_at)
         if (!lastSeen) {
           setHasUnread(true)
           return
         }
-        setHasUnread(latestDate > new Date(lastSeen))
+        setHasUnread(latestUpdate > new Date(lastSeen))
       })
-  }, [])
+  }, [storageKey, user?.id])
 
   return { hasUnread, setHasUnread }
 }
