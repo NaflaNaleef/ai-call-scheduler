@@ -157,6 +157,21 @@ export default function ProfilePage() {
   const [generatingKey, setGeneratingKey] = useState(false)
   const [generatedKey, setGeneratedKey] = useState<string | null>(null)
 
+  interface ContentPolicy {
+    id: string
+    value: string
+    description: string | null
+    policy_type: string
+    is_active: boolean
+    created_at: string
+  }
+
+  const [policies, setPolicies] = useState<ContentPolicy[]>([])
+  const [policiesLoading, setPoliciesLoading] = useState(false)
+  const [newKeyword, setNewKeyword] = useState('')
+  const [newDescription, setNewDescription] = useState('')
+  const [addingPolicy, setAddingPolicy] = useState(false)
+
   useEffect(() => {
     if (!isAdmin || !user?.org_id) return;
     setMembersLoading(true);
@@ -167,6 +182,21 @@ export default function ProfilePage() {
         setMembersLoading(false);
       });
   }, [isAdmin, user?.org_id, membersKey]);
+
+  useEffect(() => {
+    if (!isAdmin || !user?.org_id) return
+    setPoliciesLoading(true)
+    supabase
+      .rpc('f_get_content_policies', {
+        p_org_id: user.org_id
+      })
+      .then(({ data, error }) => {
+        if (!error) setPolicies(
+          (data as ContentPolicy[]) || []
+        )
+        setPoliciesLoading(false)
+      })
+  }, [isAdmin, user?.org_id])
 
   useEffect(() => {
     if (!isAdmin || !user?.org_id) return
@@ -276,6 +306,61 @@ export default function ProfilePage() {
     } catch (err: any) {
       toast({
         title: 'Failed to revoke key',
+        description: err.message || 'An error occurred.',
+        variant: 'destructive'
+      })
+    }
+  }
+
+  const handleAddPolicy = async () => {
+    if (!newKeyword.trim() || !user?.org_id) return
+    setAddingPolicy(true)
+    try {
+      const { data, error } = await supabase
+        .rpc('f_create_content_policy', {
+          p_org_id: user.org_id,
+          p_value: newKeyword.trim(),
+          p_description: newDescription.trim() || null
+        })
+      if (error) throw error
+      setPolicies(prev => [
+        ...(data as ContentPolicy[]),
+        ...prev
+      ])
+      setNewKeyword('')
+      setNewDescription('')
+      toast({
+        title: 'Keyword added',
+        description: `"${newKeyword.trim()}" added to content policy.`
+      })
+    } catch (err: any) {
+      toast({
+        title: 'Failed to add keyword',
+        description: err.message || 'An error occurred.',
+        variant: 'destructive'
+      })
+    } finally {
+      setAddingPolicy(false)
+    }
+  }
+
+  const handleDeletePolicy = async (id: string, value: string) => {
+    if (!user?.org_id) return
+    try {
+      const { error } = await supabase
+        .rpc('f_delete_content_policy', {
+          p_id: id,
+          p_org_id: user.org_id
+        })
+      if (error) throw error
+      setPolicies(prev => prev.filter(p => p.id !== id))
+      toast({
+        title: 'Keyword removed',
+        description: `"${value}" removed from content policy.`
+      })
+    } catch (err: any) {
+      toast({
+        title: 'Failed to remove keyword',
         description: err.message || 'An error occurred.',
         variant: 'destructive'
       })
@@ -487,6 +572,11 @@ export default function ProfilePage() {
             <TabsTrigger value="activity">Activity Log</TabsTrigger>
             {isAdmin && <TabsTrigger value="team">Team Members</TabsTrigger>}
             {isAdmin && <TabsTrigger value="apikeys">API Keys</TabsTrigger>}
+            {isAdmin && (
+              <TabsTrigger value="contentpolicy">
+                Content Policy
+              </TabsTrigger>
+            )}
           </TabsList>
 
           {/* Security Tab */}
@@ -917,6 +1007,141 @@ export default function ProfilePage() {
                               ) : (
                                 <span className="text-xs text-muted-foreground italic">Revoked</span>
                               )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </div>
+            </TabsContent>
+          )}
+
+          {/* Content Policy Tab — admin only */}
+          {isAdmin && (
+            <TabsContent value="contentpolicy" className="mt-4">
+              <div className="bg-card rounded-lg border
+                border-border p-6 shadow-sm space-y-5">
+                <div>
+                  <h3 className="text-lg font-semibold">
+                    Content Policy
+                  </h3>
+                  <p className="text-sm text-muted-foreground">
+                    Add keywords or phrases that should be
+                    blocked in your organisation's campaign
+                    instructions. These rules apply in addition
+                    to the global platform rules.
+                  </p>
+                </div>
+
+                {/* Add new keyword */}
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Keyword or phrase to block
+                        e.g. bankruptcy"
+                      value={newKeyword}
+                      onChange={(e) =>
+                        setNewKeyword(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleAddPolicy()
+                      }}
+                      className="flex-1"
+                    />
+                    <Button
+                      onClick={handleAddPolicy}
+                      disabled={!newKeyword.trim() || addingPolicy}
+                    >
+                      {addingPolicy
+                        ? <><Loader2 className="h-4 w-4
+                            animate-spin mr-1.5" />Adding…</>
+                        : '+ Add'
+                      }
+                    </Button>
+                  </div>
+                  <Input
+                    placeholder="Optional: reason why this
+                      is blocked (for your reference)"
+                    value={newDescription}
+                    onChange={(e) =>
+                      setNewDescription(e.target.value)}
+                  />
+                </div>
+
+                {/* Global rules notice */}
+                <div className="rounded-lg bg-muted/30 border
+                  border-border px-4 py-3">
+                  <p className="text-xs text-muted-foreground">
+                    <span className="font-medium">
+                      Global platform rules
+                    </span>{' '}
+                    are always enforced and cannot be removed.
+                    These include impersonation, threats,
+                    financial data collection, and deceptive
+                    identity claims.
+                  </p>
+                </div>
+
+                {/* Policies list */}
+                {policiesLoading ? (
+                  <div className="flex justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin
+                      text-muted-foreground" />
+                  </div>
+                ) : policies.length === 0 ? (
+                  <p className="text-sm text-muted-foreground
+                    text-center py-8">
+                    No custom rules yet. Add keywords above
+                    to restrict campaign content for your
+                    organisation.
+                  </p>
+                ) : (
+                  <div className="rounded-lg border
+                    border-border overflow-hidden">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Keyword / Phrase</TableHead>
+                          <TableHead>Reason</TableHead>
+                          <TableHead>Added</TableHead>
+                          <TableHead>Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {policies.map((p) => (
+                          <TableRow key={p.id}>
+                            <TableCell>
+                              <code className="text-xs
+                                bg-muted px-2 py-1 rounded">
+                                {p.value}
+                              </code>
+                            </TableCell>
+                            <TableCell className="text-sm
+                              text-muted-foreground">
+                              {p.description || '—'}
+                            </TableCell>
+                            <TableCell className="text-sm
+                              text-muted-foreground">
+                              {formatMemberDate(p.created_at)}
+                            </TableCell>
+                            <TableCell>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 text-xs
+                                  text-destructive
+                                  border-destructive/30
+                                  hover:bg-destructive/5"
+                                onClick={() =>
+                                  handleDeletePolicy(
+                                    p.id, p.value
+                                  )}
+                              >
+                                <Trash2 className="h-3 w-3
+                                  mr-1" />
+                                Remove
+                              </Button>
                             </TableCell>
                           </TableRow>
                         ))}

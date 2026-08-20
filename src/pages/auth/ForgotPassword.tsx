@@ -42,9 +42,13 @@ export default function ForgotPasswordPage() {
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="flex justify-center mb-8">
-          <div className="w-12 h-12 rounded-xl bg-primary flex items-center justify-center">
+          <Link
+            to="/"
+            className="w-12 h-12 rounded-xl bg-primary flex items-center justify-center transition-opacity duration-150 hover:opacity-90"
+            aria-label="Back to home"
+          >
             <KeyRound className="h-6 w-6 text-primary-foreground" />
-          </div>
+          </Link>
         </div>
 
         <div className="bg-card border border-border rounded-xl shadow-sm p-8">

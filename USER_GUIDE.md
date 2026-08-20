@@ -182,7 +182,7 @@ Contacts are the people your AI campaigns will call. You can find them under **C
 
    - **First Name** *(required)* — The contact's first name.
    - **Last Name** *(optional)* — The contact's surname.
-   - **Phone Number** *(required)* — Must include the country code (e.g., `+61431161407` for Australia). The system validates the format automatically.
+   - **Phone Number** *(required)* — Must include the country code (e.g., `+61412345678` for Australia or `+94771234567` for Sri Lanka). The system validates the format automatically.
    - **Email** *(optional)* — A valid email address for the contact.
    - **Timezone** *(optional)* — The contact's local timezone (e.g., `Australia/Sydney`, `America/New_York`). This helps ensure calls are made at appropriate times.
    - **Groups** *(optional)* — Select one or more groups to assign this contact to at creation time.
@@ -298,6 +298,49 @@ This is where you define what the AI will say and do during each call.
 💡 **Tip:** Be specific in your instructions. The more clearly you describe the goal of the call, the better the AI will perform.
 
 ⚠️ **Note:** Once a campaign has been launched it is **locked** and the script cannot be changed. Review your greeting and instructions carefully before launching.
+
+### What to avoid in campaign instructions
+
+The following types of content will be
+automatically blocked:
+→ Impersonating government officials,
+  police, or law enforcement
+→ Requesting sensitive financial information
+  (bank account numbers, PINs, card numbers)
+→ Threatening language or illegal debt
+  collection tactics
+→ Deceptive identity claims
+
+Keep campaign instructions professional,
+honest, and focused on the legitimate
+purpose of the call.
+
+### Custom Content Policy
+
+As an organisation admin you can define
+additional words or phrases that should
+be blocked in your campaigns.
+
+To manage your content policy:
+1. Go to Profile → Content Policy tab
+2. Enter a keyword or phrase to block
+3. Optionally add a reason for reference
+4. Click Add
+
+When any campaign instruction contains
+a blocked keyword it will be prevented
+from launching with a clear message
+explaining which keyword was flagged.
+
+To remove a rule:
+→ Click Remove next to the keyword
+→ The rule is removed immediately
+→ Campaigns with that keyword can
+  now be launched
+
+Note: Global platform rules always
+apply and cannot be removed. Your
+custom rules are in addition to these.
 
 Click **Next** to continue.
 
@@ -469,6 +512,24 @@ A **Blocked** run means the system checked your remaining call minutes before se
 - For **recurring** campaigns: the next scheduled run will resume automatically after upgrading, or after your monthly minutes reset at the start of the next billing cycle.
 
 > **Note:** BLOCKED is different from PAUSED. PAUSED means you or an admin manually paused the campaign. BLOCKED means the system stopped it automatically because your minutes limit was reached.
+
+### Why a campaign might be blocked
+
+Campaign runs can be blocked for two reasons:
+
+Call minutes limit:
+→ Your plan's included minutes are exhausted
+→ Add a payment method (free plan) or
+  upgrade your plan to continue
+
+Content validation:
+→ The campaign instructions were flagged
+  as containing inappropriate or restricted
+  content
+→ The specific reason is shown below the
+  BLOCKED status badge
+→ Edit your campaign instructions to remove
+  the flagged content and relaunch
 
 ---
 

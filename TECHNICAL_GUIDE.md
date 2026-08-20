@@ -1172,9 +1172,9 @@ Naming:    f_ prefix convention
 #### Phone Number Format
 
 ```
-Required: E.164 format
-Australian: +61XXXXXXXXX
-Regex: /^\+61[2-9][0-9]{8}$/
+Required: E.164 format, any country (not restricted to Australia)
+Examples: +61412345678 (Australia), +94771234567 (Sri Lanka)
+Regex: /^\+[1-9]\d{7,14}$/
 ```
 
 #### Known Behaviours
@@ -1419,6 +1419,9 @@ Database:   No automated rollback — keep rollback SQL ready
 | 31 | Overage cost display | Sidebar now shows estimated overage cost below the Call Minutes progress bar when a paid plan user exceeds their included minutes. Calculated as: `max(0, minutes_used − included_minutes) × overage_rate_per_minute` from the plans table. Updates in real time as usage changes. |
 | 32 | Outbound webhook delivery implemented | `process-call-webhook` now checks `webhook_subscriptions` after each call and POSTs a signed payload to all registered URLs. Payload signed with HMAC-SHA256. Headers: `X-Webhook-Signature: sha256=...` and `X-Webhook-Event: call.completed`. Delivery is non-fatal. |
 | 33 | API key management UI implemented | Profile → API Keys tab allows admins to generate, copy, and revoke API keys without SQL access. Generated key is shown once with a copy button. Revoked keys show as inactive immediately. |
+| 34 | Prompt validation implemented | Two-layer validation (keyword blocklist + OpenAI Moderation API) runs before every campaign launch. Blocked campaigns show specific reason in Campaign Runs UI via `block_reason` column. |
+| 35 | Campaign contact QUEUED→PENDING fix | Voicemail and failed calls now correctly update status from `QUEUED` to `PENDING` so retry logic can find them. |
+| 36 | Per-org content policy | Per-org content policy implemented — admins can add custom blocked keywords from Profile → Content Policy tab. Org-specific rules enforced in `prepare-campaign-calls` alongside global platform rules. |
 
 **Verification query used for #7 and #8 (re-run if auditing function grants again):**
 ```sql
@@ -2035,6 +2038,180 @@ Super Admin page → What's New section:
 → New entry published → red dot reappears
   for all users on next page load
 → Panel closes when clicking outside
+
+---
+
+## 17. Prompt Validation
+
+### Overview
+Campaign prompts (greeting and instructions)
+are validated before any calls are sent to
+Bland AI. This prevents harmful, inappropriate
+or deceptive content from being used in
+automated calls.
+
+### How it works
+Validation runs in prepare-campaign-calls
+edge function after the call minutes limit
+check and before sending to Bland AI.
+Two layers of validation run in sequence:
+
+Layer 1 — Keyword blocklist (instant, free):
+Checks the greeting and instructions for
+high-risk keywords. If found → immediately
+blocked, no API call needed.
+
+Blocked keyword categories:
+→ Impersonation: police, court order,
+  sheriff, arrest, warrant, government
+  official, ato, irs, federal agent,
+  law enforcement
+→ Financial data collection: bank account
+  number, credit card number, bsb number,
+  pin number, cvv, routing number,
+  account password
+→ Illegal threats: seize your assets,
+  garnish your wages, criminal charges,
+  send you to jail, repossess, have you
+  arrested
+→ Deceptive identity: pretend to be,
+  act as if you are, claim to be from,
+  say you are from, impersonate
+
+Layer 2 — OpenAI Moderation API (free):
+If keyword check passes, the prompt is sent
+to OpenAI's moderation endpoint
+(POST https://api.openai.com/v1/moderations).
+OpenAI checks for: harassment, threatening,
+hate, self-harm, sexual, violence content.
+If flagged → blocked with category details.
+
+### When validation is skipped
+If OPENAI_API_KEY is not set in Supabase
+Edge Function Secrets, the OpenAI check
+is skipped. Keyword check still runs.
+If OpenAI API is down → non-fatal, campaign
+proceeds (availability > strict enforcement).
+
+### What happens when blocked
+→ Campaign run status set to BLOCKED
+→ block_reason saved to campaign_runs table
+  with the specific reason
+→ UI shows the actual reason instead of
+  generic "Call minutes limit reached"
+→ Admin can edit the campaign instructions
+  and relaunch
+
+### Future upgrade path
+Can switch from OpenAI to Claude moderation
+with minimal code change:
+→ Change API URL
+→ Change request headers
+→ Change request body format
+→ Change response parsing
+→ All other logic stays identical
+
+### Database change
+block_reason text column added to
+campaign_runs table.
+All 5 campaign run RPCs updated to include
+block_reason in their return columns:
+→ f_get_org_campaign_runs
+→ f_get_campaign_run_by_id
+→ f_get_active_campaign_run
+→ f_get_campaign_runs
+→ f_get_campaign_runs_grouped
+
+### Environment variable required
+OPENAI_API_KEY → add to Supabase Edge
+Function Secrets (sk-...)
+Free to use — OpenAI moderation endpoint
+has no cost and no quota limits.
+
+---
+
+## 18. Per-Organisation Content Policy
+
+### Overview
+Organisation admins can define custom
+keyword/phrase blocklists on top of the
+global platform rules. When a campaign is
+launched, both global and org-specific rules
+are checked before sending to Bland AI.
+
+### How it works
+1. Admin goes to Profile → Content Policy tab
+2. Adds keywords or phrases to block
+3. When any campaign is launched:
+   → Global keyword check runs first
+   → Org-specific keyword check runs second
+   → OpenAI moderation runs third
+   → If any check fails → campaign BLOCKED
+     with specific reason shown in UI
+
+### Database Table
+org_content_policies:
+- id (uuid)
+- org_id (uuid) → references organizations
+- policy_type (text) → default 'blocked_keyword'
+- value (text) → keyword/phrase in lowercase
+- description (text) → optional reason/note
+- is_active (boolean) → soft delete
+- created_by (uuid) → references users
+- created_at, updated_at (timestamptz)
+
+RLS: org isolation enforced — each org
+can only see and manage their own policies.
+
+### RPCs Added
+f_create_content_policy(org_id, value,
+  description, policy_type)
+→ Validates value not empty
+→ Checks for duplicates
+→ Stores in lowercase for case-insensitive
+  matching
+→ Returns created policy row
+
+f_get_content_policies(org_id)
+→ Returns all active policies for the org
+→ Ordered by created_at DESC
+
+f_delete_content_policy(id, org_id)
+→ Soft deletes (sets is_active = false)
+→ Org isolation enforced via org_id check
+
+### Edge Function Change
+prepare-campaign-calls updated:
+→ After global keyword check passes,
+  fetches org_content_policies for the
+  campaign's org
+→ Runs org-specific keyword check on
+  greeting + instructions
+→ If matched → returns BLOCKED with message:
+  "Campaign contains content restricted by
+  your organisation's content policy: {keyword}.
+  Please review your campaign instructions or
+  update your content policy in Profile settings."
+
+### UI
+Profile → Content Policy tab (admin only):
+→ Add keyword/phrase input with optional
+  description field
+→ Table of existing rules with keyword,
+  reason, date added, Remove button
+→ Global rules notice explaining platform
+  rules cannot be removed
+→ Keywords stored and matched in lowercase
+  (case-insensitive matching)
+
+### Important Notes
+→ Org keywords are checked AFTER global
+  keywords but BEFORE OpenAI moderation
+→ Removing a keyword immediately allows
+  previously blocked content
+→ Keywords are stored in lowercase —
+  matching is case-insensitive
+→ Duplicate keywords are rejected
 
 ---
 
