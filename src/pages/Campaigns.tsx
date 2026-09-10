@@ -923,6 +923,7 @@ function CampaignDetailDrawer({
   const [launchLoading, setLaunchLoading] = useState(false);
   const [launchError, setLaunchError] = useState<string | null>(null);
   const [launchSuccess, setLaunchSuccess] = useState<any>(null);
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   // Pre-launch review state
   const [showReviewModal, setShowReviewModal] = useState(false);
@@ -947,7 +948,7 @@ function CampaignDetailDrawer({
       setFullCampaign(null); setFields([]);
       setShowReviewModal(false); setReviewContacts([]); setReviewLoading(false);
       setActiveRun(null); setLatestRun(null); setLaunchSuccess(null); setLaunchError(null);
-      setGenericConfirmLoading(false);
+      setGenericConfirmLoading(false); setValidationError(null);
     }
   }, [open]);
 
@@ -1020,8 +1021,53 @@ function CampaignDetailDrawer({
     finally { setReviewLoading(false); }
   }
 
+  const validateBeforeLaunch = async (
+    campaign: Campaign
+  ): Promise<{ safe: boolean; reason: string }> => {
+    if (!user?.org_id) return { safe: true, reason: '' }
+
+    // Fetch org content policies
+    const { data: policies } = await supabase
+      .rpc('f_get_content_policies', {
+        p_org_id: user.org_id
+      })
+
+    if (!policies || policies.length === 0) {
+      return { safe: true, reason: '' }
+    }
+
+    // Check campaign text against org keywords
+    const promptText = `
+      ${campaign.greeting || ''}
+      ${campaign.instructions || ''}
+    `.toLowerCase()
+
+    const blocked = policies.find(
+      (p: any) => promptText.includes(
+        p.value.toLowerCase()
+      )
+    )
+
+    if (blocked) {
+      return {
+        safe: false,
+        reason: `Campaign contains content restricted by your organisation's content policy: "${blocked.value}". Please review your campaign instructions or update your content policy in Profile → Content Policy.`
+      }
+    }
+
+    return { safe: true, reason: '' }
+  }
+
   async function handleConfirmLaunch() {
     if (!listCampaign || !fullCampaign) return;
+
+    setValidationError(null)
+    const validation = await validateBeforeLaunch(fullCampaign)
+    if (!validation.safe) {
+      setValidationError(validation.reason)
+      return // stop launch
+    }
+
     setLaunchLoading(true); setLaunchError(null);
     try {
 
@@ -1450,6 +1496,17 @@ function CampaignDetailDrawer({
           </div>
 
           <div className="p-6 pt-2 border-t bg-muted/20">
+            {validationError && (
+              <div className="flex items-start gap-2
+                p-3 rounded-lg border border-destructive/20
+                bg-destructive/10 mt-2">
+                <AlertCircle className="h-4 w-4
+                  text-destructive shrink-0 mt-0.5" />
+                <p className="text-xs text-destructive">
+                  {validationError}
+                </p>
+              </div>
+            )}
             <DialogFooter className="gap-2 sm:gap-0">
               <Button variant="outline" onClick={() => setShowReviewModal(false)} disabled={launchLoading}>Cancel</Button>
               <Button onClick={handleConfirmLaunch} disabled={launchLoading || reviewContacts.length === 0} className="gap-2">
