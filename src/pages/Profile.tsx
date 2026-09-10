@@ -863,8 +863,8 @@ export default function ProfilePage() {
                                       m.invite_status === 'active'
                                         ? "border-green-500/30 text-green-600 bg-green-500/5"
                                         : m.invite_status === 'pending'
-                                        ? "border-amber-500/30 text-amber-600 bg-amber-500/5"
-                                        : "border-border text-muted-foreground"
+                                          ? "border-amber-500/30 text-amber-600 bg-amber-500/5"
+                                          : "border-border text-muted-foreground"
                                     }
                                   >
                                     {m.invite_status === 'active' ? 'Active' : m.invite_status === 'pending' ? 'Pending' : 'Inactive'}
@@ -1030,8 +1030,8 @@ export default function ProfilePage() {
                   <p className="text-sm text-muted-foreground">
                     Add keywords or phrases that should be
                     blocked in your organisation's campaign
-                    instructions. These rules apply in addition
-                    to the global platform rules.
+                    instructions. These rules are checked
+                    before every campaign launch.
                   </p>
                 </div>
 
@@ -1074,12 +1074,12 @@ export default function ProfilePage() {
                   border-border px-4 py-3">
                   <p className="text-xs text-muted-foreground">
                     <span className="font-medium">
-                      Global platform rules
+                      Automatic moderation
                     </span>{' '}
-                    are always enforced and cannot be removed.
-                    These include impersonation, threats,
-                    financial data collection, and deceptive
-                    identity claims.
+                    runs on all campaigns regardless of your
+                    custom rules. This catches harassment,
+                    threats, hate speech and violent content
+                    automatically and cannot be disabled.
                   </p>
                 </div>
 

@@ -1419,7 +1419,7 @@ Database:   No automated rollback — keep rollback SQL ready
 | 31 | Overage cost display | Sidebar now shows estimated overage cost below the Call Minutes progress bar when a paid plan user exceeds their included minutes. Calculated as: `max(0, minutes_used − included_minutes) × overage_rate_per_minute` from the plans table. Updates in real time as usage changes. |
 | 32 | Outbound webhook delivery implemented | `process-call-webhook` now checks `webhook_subscriptions` after each call and POSTs a signed payload to all registered URLs. Payload signed with HMAC-SHA256. Headers: `X-Webhook-Signature: sha256=...` and `X-Webhook-Event: call.completed`. Delivery is non-fatal. |
 | 33 | API key management UI implemented | Profile → API Keys tab allows admins to generate, copy, and revoke API keys without SQL access. Generated key is shown once with a copy button. Revoked keys show as inactive immediately. |
-| 34 | Prompt validation implemented | Two-layer validation (keyword blocklist + OpenAI Moderation API) runs before every campaign launch. Blocked campaigns show specific reason in Campaign Runs UI via `block_reason` column. |
+| 34 | Prompt validation implemented | Two-layer validation (org content policy keywords + OpenAI Moderation API) runs before every campaign launch. Blocked campaigns show specific reason in Campaign Runs UI via `block_reason` column. |
 | 35 | Campaign contact QUEUED→PENDING fix | Voicemail and failed calls now correctly update status from `QUEUED` to `PENDING` so retry logic can find them. |
 | 36 | Per-org content policy | Per-org content policy implemented — admins can add custom blocked keywords from Profile → Content Policy tab. Org-specific rules enforced in `prepare-campaign-calls` alongside global platform rules. |
 
@@ -2056,40 +2056,40 @@ edge function after the call minutes limit
 check and before sending to Bland AI.
 Two layers of validation run in sequence:
 
-Layer 1 — Keyword blocklist (instant, free):
-Checks the greeting and instructions for
-high-risk keywords. If found → immediately
-blocked, no API call needed.
-
-Blocked keyword categories:
-→ Impersonation: police, court order,
-  sheriff, arrest, warrant, government
-  official, ato, irs, federal agent,
-  law enforcement
-→ Financial data collection: bank account
-  number, credit card number, bsb number,
-  pin number, cvv, routing number,
-  account password
-→ Illegal threats: seize your assets,
-  garnish your wages, criminal charges,
-  send you to jail, repossess, have you
-  arrested
-→ Deceptive identity: pretend to be,
-  act as if you are, claim to be from,
-  say you are from, impersonate
+Layer 1 — Org-specific keyword check
+(instant, free):
+Checks the greeting and instructions against
+the org's own blocked keywords/phrases,
+defined by the org admin in Profile →
+Content Policy (see Section 18). If a match
+is found → immediately blocked, no API call
+needed.
 
 Layer 2 — OpenAI Moderation API (free):
-If keyword check passes, the prompt is sent
-to OpenAI's moderation endpoint
+If the org keyword check passes, the prompt
+is sent to OpenAI's moderation endpoint
 (POST https://api.openai.com/v1/moderations).
 OpenAI checks for: harassment, threatening,
 hate, self-harm, sexual, violence content.
 If flagged → blocked with category details.
 
+Note: an earlier version of this feature
+included a platform-wide global keyword
+blocklist as an additional layer before the
+org-specific check. It was removed because
+its fixed keyword list (e.g. terms around
+debt, legal action, repossession) produced
+false positives for legitimate debt recovery
+and collections use cases, which are a
+supported use case on this platform. Content
+policy is now fully org-configurable via
+Layer 1, combined with OpenAI moderation as
+a baseline safety net.
+
 ### When validation is skipped
 If OPENAI_API_KEY is not set in Supabase
 Edge Function Secrets, the OpenAI check
-is skipped. Keyword check still runs.
+is skipped. Org keyword check still runs.
 If OpenAI API is down → non-fatal, campaign
 proceeds (availability > strict enforcement).
 
@@ -2143,10 +2143,9 @@ are checked before sending to Bland AI.
 1. Admin goes to Profile → Content Policy tab
 2. Adds keywords or phrases to block
 3. When any campaign is launched:
-   → Global keyword check runs first
-   → Org-specific keyword check runs second
-   → OpenAI moderation runs third
-   → If any check fails → campaign BLOCKED
+   → Org-specific keyword check runs first
+   → OpenAI moderation runs second
+   → If either check fails → campaign BLOCKED
      with specific reason shown in UI
 
 ### Database Table
@@ -2182,7 +2181,7 @@ f_delete_content_policy(id, org_id)
 
 ### Edge Function Change
 prepare-campaign-calls updated:
-→ After global keyword check passes,
+→ After org-specific keyword check passes,
   fetches org_content_policies for the
   campaign's org
 → Runs org-specific keyword check on
@@ -2199,14 +2198,15 @@ Profile → Content Policy tab (admin only):
   description field
 → Table of existing rules with keyword,
   reason, date added, Remove button
-→ Global rules notice explaining platform
-  rules cannot be removed
+→ Notice explaining that OpenAI moderation
+  runs automatically on all campaigns and
+  cannot be disabled
 → Keywords stored and matched in lowercase
   (case-insensitive matching)
 
 ### Important Notes
-→ Org keywords are checked AFTER global
-  keywords but BEFORE OpenAI moderation
+→ Org keywords are checked BEFORE
+  OpenAI moderation
 → Removing a keyword immediately allows
   previously blocked content
 → Keywords are stored in lowercase —
