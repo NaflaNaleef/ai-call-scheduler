@@ -314,6 +314,7 @@ function CreateCampaignModal({ open, onClose, onCreate, preselectedGroup }: Crea
   const [groupMembers, setGroupMembers] = useState<Record<string, Set<string>>>({});
   const [loadingStep2, setLoadingStep2] = useState(false);
   const [createLoading, setCreateLoading] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
   const [launchLoading, setLaunchLoading] = useState(false);
   const [createdCampaignId, setCreatedCampaignId] = useState<string | null>(null);
   const createRef = useRef(false);
@@ -353,6 +354,7 @@ function CreateCampaignModal({ open, onClose, onCreate, preselectedGroup }: Crea
       setDaysOfWeek(['MON', 'TUE', 'WED', 'THU', 'FRI']);
       setStartDate(null); setEndDate(null);
       setCreatedCampaignId(null); setLaunchLoading(false);
+      setCreateError(null);
       createRef.current = false;
     }
   }, [open, preselectedGroup]);
@@ -474,6 +476,7 @@ function CreateCampaignModal({ open, onClose, onCreate, preselectedGroup }: Crea
 
   async function handleCreate() {
     if (!user?.org_id || !user?.dbId || createRef.current) return;
+    setCreateError(null)
     createRef.current = true; setCreateLoading(true);
     try {
       const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -491,7 +494,12 @@ function CreateCampaignModal({ open, onClose, onCreate, preselectedGroup }: Crea
         p_start_date: scheduleType === 'recurring' ? startDate : null,
         p_end_date: scheduleType === 'recurring' ? endDate : null,
       });
-      if (error) throw error;
+      if (error) {
+        console.error('handleCreate:', error)
+        setCreateError(error.message)
+        createRef.current = false
+        return
+      }
       const campaignId = Array.isArray(rawData) ? (rawData[0]?.id ?? rawData[0]) : (rawData?.id ?? rawData);
       if (!campaignId) throw new Error("Failed to get campaign ID");
       for (const gid of Array.from(selectedGroupIds)) {
@@ -806,6 +814,26 @@ function CreateCampaignModal({ open, onClose, onCreate, preselectedGroup }: Crea
                 <span className="font-bold text-primary tabular-nums">{allSelectedContactIds.size}</span>
               </div>
             </div>
+
+            {createError && (
+              <div className="flex items-start gap-2
+                p-3 rounded-lg border
+                border-destructive/20 bg-destructive/10
+                mb-3">
+                <AlertCircle className="h-4 w-4
+                  text-destructive shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-xs font-medium
+                    text-destructive">
+                    Campaign blocked
+                  </p>
+                  <p className="text-xs text-destructive
+                    mt-0.5">
+                    {createError}
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -862,13 +890,13 @@ function CreateCampaignModal({ open, onClose, onCreate, preselectedGroup }: Crea
 
         <DialogFooter className="flex items-center justify-between sm:justify-between gap-2">
           {step < 5 && (
-            <Button variant="outline" onClick={() => (step > 1 ? setStep(step - 1) : onClose())}>
+            <Button variant="outline" onClick={() => { setCreateError(null); step > 1 ? setStep(step - 1) : onClose(); }}>
               {step > 1 ? <><ChevronLeft className="h-4 w-4 mr-1" /> Back</> : "Cancel"}
             </Button>
           )}
           {step < 4 ? (
             <button
-              onClick={() => setStep(step + 1)}
+              onClick={() => { setCreateError(null); setStep(step + 1); }}
               disabled={
                 step === 1 ? !canNext1 :
                   step === 2 ? !canNext2 :

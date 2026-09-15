@@ -332,6 +332,12 @@ a blocked keyword it will be prevented
 from launching with a clear message
 explaining which keyword was flagged.
 
+Validation happens at two points:
+→ When saving the campaign — error shown
+  inline in the campaign wizard
+→ When launching — campaign run blocked
+  if keyword found
+
 To remove a rule:
 → Click Remove next to the keyword
 → The rule is removed immediately

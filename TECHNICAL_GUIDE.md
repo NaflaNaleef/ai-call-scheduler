@@ -2140,13 +2140,37 @@ launched, both global and org-specific rules
 are checked before sending to Bland AI.
 
 ### How it works
-1. Admin goes to Profile → Content Policy tab
-2. Adds keywords or phrases to block
-3. When any campaign is launched:
-   → Org-specific keyword check runs first
-   → OpenAI moderation runs second
-   → If either check fails → campaign BLOCKED
-     with specific reason shown in UI
+
+Campaign content is validated at two points:
+
+At save time (backend only — no
+frontend pre-check yet):
+1. Campaign wizard calls the
+   f_create_campaign RPC directly with
+   the greeting and instructions
+2. RPC fetches org_content_policies and
+   checks the text against org keywords
+   before the INSERT
+3. If blocked → RPC raises an exception,
+   which the wizard displays as an inline
+   error in Step 4 (Review). Campaign NOT
+   saved to database
+4. If check passes → campaign saved ✅
+
+Note: there is currently no client-side
+keyword check before this RPC call (unlike
+the launch-time flow below, which does
+check org keywords in the browser first).
+The RPC is the only enforcement point at
+save time.
+
+At launch time (backend only):
+1. prepare-campaign-calls fetches org policies
+2. Checks greeting + instructions again
+3. OpenAI moderation runs
+4. If either fails → campaign run marked BLOCKED
+   block_reason saved to campaign_runs table
+5. If both pass → calls sent to Bland AI ✅
 
 ### Database Table
 org_content_policies:
@@ -2191,6 +2215,15 @@ prepare-campaign-calls updated:
   your organisation's content policy: {keyword}.
   Please review your campaign instructions or
   update your content policy in Profile settings."
+
+f_create_campaign RPC updated:
+→ Fetches org_content_policies before INSERT
+→ Normalizes text (removes spaces, hyphens
+  etc.) for case-insensitive matching
+→ RAISE EXCEPTION if keyword found
+→ Campaign not saved to database
+→ Also added f_increment_usage call to
+  fix campaigns_count not incrementing
 
 ### UI
 Profile → Content Policy tab (admin only):
