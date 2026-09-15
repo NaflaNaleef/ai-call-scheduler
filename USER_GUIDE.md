@@ -315,6 +315,20 @@ Keep campaign instructions professional,
 honest, and focused on the legitimate
 purpose of the call.
 
+### Campaign limits
+
+If you have reached your plan's campaign
+limit, you will see an error message
+when trying to save a new campaign.
+The error appears inline in the campaign
+wizard before anything is saved.
+
+To create more campaigns:
+→ Upgrade your plan from the
+  Subscriptions page
+→ Or delete unused campaigns to
+  free up space
+
 ### Custom Content Policy
 
 As an organisation admin you can define
@@ -332,11 +346,16 @@ a blocked keyword it will be prevented
 from launching with a clear message
 explaining which keyword was flagged.
 
-Validation happens at two points:
-→ When saving the campaign — error shown
-  inline in the campaign wizard
-→ When launching — campaign run blocked
-  if keyword found
+When saving a campaign, two checks run
+automatically:
+1. Campaign limit check — ensures you
+   have not exceeded your plan limit
+2. Content policy check — ensures your
+   campaign instructions don't contain
+   any blocked keywords
+
+Both errors are shown inline in the
+campaign wizard if either check fails.
 
 To remove a rule:
 → Click Remove next to the keyword

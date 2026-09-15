@@ -1012,7 +1012,7 @@ Naming:    f_ prefix convention
 
 | Function | Arguments | Purpose |
 |---|---|---|
-| f_create_campaign | p_org_id, p_created_by, p_name, ... | Creates campaign. Checks LOCKED limit, scheduling/recurring permissions. SECURITY DEFINER. |
+| f_create_campaign | p_org_id, p_created_by, p_name, ... | Creates campaign. Checks LOCKED limit, scheduling/recurring permissions. Checks campaign limit via `f_check_org_limit` and org content policies before INSERT. Calls `f_increment_usage` after INSERT with safety resync of `campaigns_count`. SECURITY DEFINER. |
 | f_update_campaign | p_id, p_name, p_description, ... | Updates campaign. Blocks if run is active. |
 | f_deactivate_campaign | p_id | Deactivates campaign. Pauses SCHEDULED runs. |
 | f_reactivate_campaign | p_id | Reactivates. Creates next scheduled run for recurring. |
@@ -1422,6 +1422,8 @@ Database:   No automated rollback — keep rollback SQL ready
 | 34 | Prompt validation implemented | Two-layer validation (org content policy keywords + OpenAI Moderation API) runs before every campaign launch. Blocked campaigns show specific reason in Campaign Runs UI via `block_reason` column. |
 | 35 | Campaign contact QUEUED→PENDING fix | Voicemail and failed calls now correctly update status from `QUEUED` to `PENDING` so retry logic can find them. |
 | 36 | Per-org content policy | Per-org content policy implemented — admins can add custom blocked keywords from Profile → Content Policy tab. Org-specific rules enforced in `prepare-campaign-calls` alongside global platform rules. |
+| 37 | Campaign limit enforcement at RPC level | `f_create_campaign` now calls `f_check_org_limit` before INSERT so API gateway users cannot bypass campaign limits. Error shown inline in campaign wizard. |
+| 38 | campaigns_count not incrementing fixed | `f_create_campaign` now calls `f_increment_usage` after INSERT with safety resync to ensure `campaigns_count` is always accurate. |
 
 **Verification query used for #7 and #8 (re-run if auditing function grants again):**
 ```sql
@@ -2144,33 +2146,48 @@ are checked before sending to Bland AI.
 Campaign content is validated at two points:
 
 At save time (backend only — no
-frontend pre-check yet):
-1. Campaign wizard calls the
-   f_create_campaign RPC directly with
-   the greeting and instructions
-2. RPC fetches org_content_policies and
-   checks the text against org keywords
-   before the INSERT
-3. If blocked → RPC raises an exception,
-   which the wizard displays as an inline
-   error in Step 4 (Review). Campaign NOT
-   saved to database
-4. If check passes → campaign saved ✅
+frontend pre-check) — f_create_campaign RPC
+now performs THREE checks in order:
 
-Note: there is currently no client-side
-keyword check before this RPC call (unlike
-the launch-time flow below, which does
-check org keywords in the browser first).
-The RPC is the only enforcement point at
-save time.
+Check 1 — Campaign limit:
+→ Calls f_check_org_limit(org_id, 'add_campaign')
+→ If limit reached → RAISE EXCEPTION
+  "Campaign limit reached. Please upgrade
+  your plan."
+→ Error shown inline in wizard Step 4
+→ Nothing saved to database
 
-At launch time (backend only):
-1. prepare-campaign-calls fetches org policies
-2. Checks greeting + instructions again
-3. OpenAI moderation runs
-4. If either fails → campaign run marked BLOCKED
-   block_reason saved to campaign_runs table
-5. If both pass → calls sent to Bland AI ✅
+Check 2 — Org content policy:
+→ Fetches org_content_policies
+→ Normalizes and checks greeting +
+  instructions against org keywords
+→ If blocked → RAISE EXCEPTION
+  with specific keyword and message
+→ Error shown inline in wizard Step 4
+→ Nothing saved to database
+
+Check 3 — Insert campaign:
+→ Only reached if both checks pass
+→ Campaign saved to database
+→ f_increment_usage called
+→ Safety resync of campaigns_count
+
+No client-side pre-check at save time ✅ —
+handleCreate calls f_create_campaign RPC
+directly and all three checks above run
+server-side.
+
+At launch time:
+→ handleConfirmLaunch calls
+  validateBeforeLaunch (browser-side)
+→ Fetches org policies via f_get_content_policies
+→ Checks campaign text in browser
+→ If blocked → inline error in launch dialog
+→ If safe → calls prepare-campaign-calls
+→ prepare-campaign-calls checks org policies
+  again (server-side safety net)
+→ OpenAI moderation runs
+→ If either fails → campaign run BLOCKED
 
 ### Database Table
 org_content_policies:
