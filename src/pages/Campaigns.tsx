@@ -2144,6 +2144,7 @@ function GenericConfirmDialog({ open, onClose, onConfirm, loading, title, descri
 
 export default function CampaignsPage() {
   const { user, subscription } = useAuth();
+  const navigate = useNavigate();
   const location = useLocation();
   const searchParams = new URLSearchParams(location.search);
   const preselectedGroup = searchParams.get("createFromGroup") ?? undefined;
@@ -2415,6 +2416,78 @@ export default function CampaignsPage() {
             </SelectContent>
           </Select>
         </div>
+
+        {!canCreateCampaign && (
+          <div className="flex items-center
+            justify-between gap-4 p-4 rounded-lg
+            border border-warning/30
+            bg-warning/10 mb-4">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="h-4 w-4
+                text-warning shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-medium
+                  text-warning">
+                  Campaign limit reached
+                </p>
+                <p className="text-xs
+                  text-muted-foreground mt-0.5">
+                  You have used all
+                  {subscription?.max_campaigns} campaigns
+                  on your current plan. Upgrade to
+                  create more campaigns.
+                </p>
+              </div>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="shrink-0 border-warning/30
+                text-warning hover:bg-warning/10"
+              onClick={() => navigate('/subscriptions')}
+            >
+              Upgrade Plan
+            </Button>
+          </div>
+        )}
+
+        {needsPaymentMethod && (
+          <div className="flex items-center
+            justify-between gap-4 p-4 rounded-lg
+            border border-blue-200
+            bg-blue-50 dark:bg-blue-950/20
+            dark:border-blue-800 mb-4">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="h-4 w-4
+                text-blue-600 dark:text-blue-400
+                shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-medium
+                  text-blue-600 dark:text-blue-400">
+                  Payment method required to launch
+                </p>
+                <p className="text-xs
+                  text-muted-foreground mt-0.5">
+                  You are on the free plan. Add a
+                  payment method to enable campaign
+                  launching. Calls are charged at
+                  $1.00/min, billed monthly.
+                </p>
+              </div>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="shrink-0 border-blue-200
+                text-blue-600 hover:bg-blue-50
+                dark:border-blue-800
+                dark:text-blue-400"
+              onClick={() => setShowAddCard(true)}
+            >
+              Add Payment Method
+            </Button>
+          </div>
+        )}
 
         {filtered.length === 0 ? (
           <EmptyState

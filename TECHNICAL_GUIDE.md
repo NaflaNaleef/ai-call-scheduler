@@ -1424,6 +1424,7 @@ Database:   No automated rollback — keep rollback SQL ready
 | 36 | Per-org content policy | Per-org content policy implemented — admins can add custom blocked keywords from Profile → Content Policy tab. Org-specific rules enforced in `prepare-campaign-calls` alongside global platform rules. |
 | 37 | Campaign limit enforcement at RPC level | `f_create_campaign` now calls `f_check_org_limit` before INSERT so API gateway users cannot bypass campaign limits. Error shown inline in campaign wizard. |
 | 38 | campaigns_count not incrementing fixed | `f_create_campaign` now calls `f_increment_usage` after INSERT with safety resync to ensure `campaigns_count` is always accurate. |
+| 39 | Campaign page banners added | Yellow banner when campaign limit reached, blue banner for free plan users without payment method. Both show at top of Campaigns page with action buttons to resolve. |
 
 **Verification query used for #7 and #8 (re-run if auditing function grants again):**
 ```sql
@@ -2262,6 +2263,48 @@ Profile → Content Policy tab (admin only):
 → Keywords are stored in lowercase —
   matching is case-insensitive
 → Duplicate keywords are rejected
+
+---
+
+## 19. Campaign Page Banners
+
+### Overview
+The Campaigns page shows contextual
+warning banners at the top to inform
+users of issues before they try to
+create or launch campaigns.
+
+### Banner 1 — Campaign Limit (all plans)
+Condition: campaigns_count >= max_campaigns
+Colour: Yellow/warning
+Message: "Campaign limit reached"
+Shows: Number of campaigns used vs allowed
+Action button: "Upgrade Plan" → /subscriptions
+Hides when: User upgrades plan or deletes
+existing campaigns
+
+### Banner 2 — Payment Method (free plan only)
+Condition: plan_id = 'free' AND
+  stripe_customer_id IS NULL
+Colour: Blue/info
+Message: "Payment method required to launch"
+Shows: Free plan charge rate ($1.00/min)
+Action button: "Add Payment Method" →
+  opens AddPaymentMethodDialog directly
+Hides when: User adds a payment method
+  (stripe_customer_id is set)
+
+### Why banners instead of blocking
+Both banners are informational — they
+do not prevent users from browsing,
+creating drafts, or managing campaigns.
+They appear early so users can resolve
+issues before attempting to launch.
+
+The actual enforcement happens at:
+→ f_create_campaign RPC (campaign limit)
+→ prepare-campaign-calls (payment method,
+  call minutes, content policy)
 
 ---
 

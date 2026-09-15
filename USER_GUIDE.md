@@ -467,6 +467,33 @@ Click **Save Campaign** to save your campaign as a **Draft**.
 
 ---
 
+### Getting started with campaigns
+
+Before launching campaigns make sure:
+
+1. Payment method added (free plan):
+   → A blue banner appears on the Campaigns
+     page if you are on the free plan
+     without a payment method
+   → Click "Add Payment Method" to add
+     your card directly from the banner
+   → Calls are charged at $1.00/min
+     billed monthly
+
+2. Campaign limit:
+   → A warning banner appears if you have
+     reached your plan's campaign limit
+   → Click "Upgrade Plan" to increase
+     your limit
+   → Or delete unused campaigns to
+     free up space
+
+Both banners appear at the top of the
+Campaigns page so you know before
+creating or launching any campaign.
+
+---
+
 ## 5. Launching Campaigns
 
 ### How to Launch
