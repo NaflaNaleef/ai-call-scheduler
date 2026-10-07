@@ -87,8 +87,7 @@ const PAGE_SIZE = 10;
 
 // --- Component ---
 export default function ContactsPage() {
-  const isValidPhone = (phone: string) => /^\+[1-9][0-9]{7,14}$/.test(phone);
-  const isValidAustralianPhone = (phone: string) => /^\+61[2-9][0-9]{8}$/.test(phone);
+  const isValidPhone = (phone: string) => /^\+[1-9]\d{7,14}$/.test(phone);
 
   const { user, subscription } = useAuth();
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -948,16 +947,16 @@ export default function ContactsPage() {
               <Label htmlFor="ac-phone">Phone Number <span className="text-destructive">*</span></Label>
               <Input
                 id="ac-phone"
-                placeholder="+61431161407"
+                placeholder="+61412345678 or +94771234567"
                 value={newContact.phone}
                 disabled={saveLoading}
-                className={newContact.phone && !isValidAustralianPhone(newContact.phone)
+                className={newContact.phone && !isValidPhone(newContact.phone)
                   ? "border-destructive focus-visible:ring-destructive" : ""}
                 onChange={(e) => setNewContact((p) => ({ ...p, phone: e.target.value }))}
               />
-              {newContact.phone && !isValidAustralianPhone(newContact.phone) && (
+              {newContact.phone && !isValidPhone(newContact.phone) && (
                 <p className="text-xs text-destructive">
-                  Please enter a valid Australian number (e.g. +61431161407)
+                  Please enter a valid international phone number starting with + and country code. Example: +61412345678
                 </p>
               )}
             </div>
@@ -1038,7 +1037,7 @@ export default function ContactsPage() {
             <Button
               disabled={
                 !newContact.firstName.trim() ||
-                !newContact.phone.trim() || !isValidAustralianPhone(newContact.phone) ||
+                !newContact.phone.trim() || !isValidPhone(newContact.phone) ||
                 saveLoading ||
                 (newContact.email.trim() !== "" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newContact.email))
               }
@@ -1089,16 +1088,16 @@ export default function ContactsPage() {
               <Label htmlFor="ec-phone">Phone Number <span className="text-destructive">*</span></Label>
               <Input
                 id="ec-phone"
-                placeholder="+61431161407"
+                placeholder="+61412345678 or +94771234567"
                 value={editingContactForm.phone}
                 disabled={editLoading}
-                className={editingContactForm.phone && !isValidAustralianPhone(editingContactForm.phone)
+                className={editingContactForm.phone && !isValidPhone(editingContactForm.phone)
                   ? "border-destructive focus-visible:ring-destructive" : ""}
                 onChange={(e) => setEditingContactForm((p) => ({ ...p, phone: e.target.value }))}
               />
-              {editingContactForm.phone && !isValidAustralianPhone(editingContactForm.phone) && (
+              {editingContactForm.phone && !isValidPhone(editingContactForm.phone) && (
                 <p className="text-xs text-destructive">
-                  Please enter a valid Australian number (e.g. +61431161407)
+                  Please enter a valid international phone number starting with + and country code. Example: +61412345678
                 </p>
               )}
             </div>
@@ -1133,7 +1132,7 @@ export default function ContactsPage() {
             <Button
               disabled={
                 !editingContactForm.firstName.trim() ||
-                !editingContactForm.phone.trim() || !isValidAustralianPhone(editingContactForm.phone) ||
+                !editingContactForm.phone.trim() || !isValidPhone(editingContactForm.phone) ||
                 editLoading ||
                 (editingContactForm.email.trim() !== "" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(editingContactForm.email))
               }

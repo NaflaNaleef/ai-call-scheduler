@@ -182,7 +182,7 @@ Contacts are the people your AI campaigns will call. You can find them under **C
 
    - **First Name** *(required)* — The contact's first name.
    - **Last Name** *(optional)* — The contact's surname.
-   - **Phone Number** *(required)* — Must include the country code (e.g., `+61431161407` for Australia). The system validates the format automatically.
+   - **Phone Number** *(required)* — Must include the country code (e.g., `+61412345678` for Australia or `+94771234567` for Sri Lanka). The system validates the format automatically.
    - **Email** *(optional)* — A valid email address for the contact.
    - **Timezone** *(optional)* — The contact's local timezone (e.g., `Australia/Sydney`, `America/New_York`). This helps ensure calls are made at appropriate times.
    - **Groups** *(optional)* — Select one or more groups to assign this contact to at creation time.
@@ -299,6 +299,74 @@ This is where you define what the AI will say and do during each call.
 
 ⚠️ **Note:** Once a campaign has been launched it is **locked** and the script cannot be changed. Review your greeting and instructions carefully before launching.
 
+### What to avoid in campaign instructions
+
+The following types of content will be
+automatically blocked:
+→ Impersonating government officials,
+  police, or law enforcement
+→ Requesting sensitive financial information
+  (bank account numbers, PINs, card numbers)
+→ Threatening language or illegal debt
+  collection tactics
+→ Deceptive identity claims
+
+Keep campaign instructions professional,
+honest, and focused on the legitimate
+purpose of the call.
+
+### Campaign limits
+
+If you have reached your plan's campaign
+limit, you will see an error message
+when trying to save a new campaign.
+The error appears inline in the campaign
+wizard before anything is saved.
+
+To create more campaigns:
+→ Upgrade your plan from the
+  Subscriptions page
+→ Or delete unused campaigns to
+  free up space
+
+### Custom Content Policy
+
+As an organisation admin you can define
+additional words or phrases that should
+be blocked in your campaigns.
+
+To manage your content policy:
+1. Go to Profile → Content Policy tab
+2. Enter a keyword or phrase to block
+3. Optionally add a reason for reference
+4. Click Add
+
+When any campaign instruction contains
+a blocked keyword it will be prevented
+from launching with a clear message
+explaining which keyword was flagged.
+
+When saving a campaign, two checks run
+automatically:
+1. Campaign limit check — ensures you
+   have not exceeded your plan limit
+2. Content policy check — ensures your
+   campaign instructions don't contain
+   any blocked keywords
+
+Both errors are shown inline in the
+campaign wizard if either check fails.
+
+To remove a rule:
+→ Click Remove next to the keyword
+→ The rule is removed immediately
+→ Campaigns with that keyword can
+  now be launched
+
+Note: Global platform rules always
+apply and cannot be removed. Your
+custom rules are in addition to these.
+
 Click **Next** to continue.
 
 ---
@@ -399,6 +467,33 @@ Click **Save Campaign** to save your campaign as a **Draft**.
 
 ---
 
+### Getting started with campaigns
+
+Before launching campaigns make sure:
+
+1. Payment method added (free plan):
+   → A blue banner appears on the Campaigns
+     page if you are on the free plan
+     without a payment method
+   → Click "Add Payment Method" to add
+     your card directly from the banner
+   → Calls are charged at $1.00/min
+     billed monthly
+
+2. Campaign limit:
+   → A warning banner appears if you have
+     reached your plan's campaign limit
+   → Click "Upgrade Plan" to increase
+     your limit
+   → Or delete unused campaigns to
+     free up space
+
+Both banners appear at the top of the
+Campaigns page so you know before
+creating or launching any campaign.
+
+---
+
 ## 5. Launching Campaigns
 
 ### How to Launch
@@ -469,6 +564,24 @@ A **Blocked** run means the system checked your remaining call minutes before se
 - For **recurring** campaigns: the next scheduled run will resume automatically after upgrading, or after your monthly minutes reset at the start of the next billing cycle.
 
 > **Note:** BLOCKED is different from PAUSED. PAUSED means you or an admin manually paused the campaign. BLOCKED means the system stopped it automatically because your minutes limit was reached.
+
+### Why a campaign might be blocked
+
+Campaign runs can be blocked for two reasons:
+
+Call minutes limit:
+→ Your plan's included minutes are exhausted
+→ Add a payment method (free plan) or
+  upgrade your plan to continue
+
+Content validation:
+→ The campaign instructions were flagged
+  as containing inappropriate or restricted
+  content
+→ The specific reason is shown below the
+  BLOCKED status badge
+→ Edit your campaign instructions to remove
+  the flagged content and relaunch
 
 ---
 

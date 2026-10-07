@@ -1012,7 +1012,7 @@ Naming:    f_ prefix convention
 
 | Function | Arguments | Purpose |
 |---|---|---|
-| f_create_campaign | p_org_id, p_created_by, p_name, ... | Creates campaign. Checks LOCKED limit, scheduling/recurring permissions. SECURITY DEFINER. |
+| f_create_campaign | p_org_id, p_created_by, p_name, ... | Creates campaign. Checks LOCKED limit, scheduling/recurring permissions. Checks campaign limit via `f_check_org_limit` and org content policies before INSERT. Calls `f_increment_usage` after INSERT with safety resync of `campaigns_count`. SECURITY DEFINER. |
 | f_update_campaign | p_id, p_name, p_description, ... | Updates campaign. Blocks if run is active. |
 | f_deactivate_campaign | p_id | Deactivates campaign. Pauses SCHEDULED runs. |
 | f_reactivate_campaign | p_id | Reactivates. Creates next scheduled run for recurring. |
@@ -1172,9 +1172,9 @@ Naming:    f_ prefix convention
 #### Phone Number Format
 
 ```
-Required: E.164 format
-Australian: +61XXXXXXXXX
-Regex: /^\+61[2-9][0-9]{8}$/
+Required: E.164 format, any country (not restricted to Australia)
+Examples: +61412345678 (Australia), +94771234567 (Sri Lanka)
+Regex: /^\+[1-9]\d{7,14}$/
 ```
 
 #### Known Behaviours
@@ -1419,6 +1419,12 @@ Database:   No automated rollback — keep rollback SQL ready
 | 31 | Overage cost display | Sidebar now shows estimated overage cost below the Call Minutes progress bar when a paid plan user exceeds their included minutes. Calculated as: `max(0, minutes_used − included_minutes) × overage_rate_per_minute` from the plans table. Updates in real time as usage changes. |
 | 32 | Outbound webhook delivery implemented | `process-call-webhook` now checks `webhook_subscriptions` after each call and POSTs a signed payload to all registered URLs. Payload signed with HMAC-SHA256. Headers: `X-Webhook-Signature: sha256=...` and `X-Webhook-Event: call.completed`. Delivery is non-fatal. |
 | 33 | API key management UI implemented | Profile → API Keys tab allows admins to generate, copy, and revoke API keys without SQL access. Generated key is shown once with a copy button. Revoked keys show as inactive immediately. |
+| 34 | Prompt validation implemented | Two-layer validation (org content policy keywords + OpenAI Moderation API) runs before every campaign launch. Blocked campaigns show specific reason in Campaign Runs UI via `block_reason` column. |
+| 35 | Campaign contact QUEUED→PENDING fix | Voicemail and failed calls now correctly update status from `QUEUED` to `PENDING` so retry logic can find them. |
+| 36 | Per-org content policy | Per-org content policy implemented — admins can add custom blocked keywords from Profile → Content Policy tab. Org-specific rules enforced in `prepare-campaign-calls` alongside global platform rules. |
+| 37 | Campaign limit enforcement at RPC level | `f_create_campaign` now calls `f_check_org_limit` before INSERT so API gateway users cannot bypass campaign limits. Error shown inline in campaign wizard. |
+| 38 | campaigns_count not incrementing fixed | `f_create_campaign` now calls `f_increment_usage` after INSERT with safety resync to ensure `campaigns_count` is always accurate. |
+| 39 | Campaign page banners added | Yellow banner when campaign limit reached, blue banner for free plan users without payment method. Both show at top of Campaigns page with action buttons to resolve. |
 
 **Verification query used for #7 and #8 (re-run if auditing function grants again):**
 ```sql
@@ -2035,6 +2041,270 @@ Super Admin page → What's New section:
 → New entry published → red dot reappears
   for all users on next page load
 → Panel closes when clicking outside
+
+---
+
+## 17. Prompt Validation
+
+### Overview
+Campaign prompts (greeting and instructions)
+are validated before any calls are sent to
+Bland AI. This prevents harmful, inappropriate
+or deceptive content from being used in
+automated calls.
+
+### How it works
+Validation runs in prepare-campaign-calls
+edge function after the call minutes limit
+check and before sending to Bland AI.
+Two layers of validation run in sequence:
+
+Layer 1 — Org-specific keyword check
+(instant, free):
+Checks the greeting and instructions against
+the org's own blocked keywords/phrases,
+defined by the org admin in Profile →
+Content Policy (see Section 18). If a match
+is found → immediately blocked, no API call
+needed.
+
+Layer 2 — OpenAI Moderation API (free):
+If the org keyword check passes, the prompt
+is sent to OpenAI's moderation endpoint
+(POST https://api.openai.com/v1/moderations).
+OpenAI checks for: harassment, threatening,
+hate, self-harm, sexual, violence content.
+If flagged → blocked with category details.
+
+Note: an earlier version of this feature
+included a platform-wide global keyword
+blocklist as an additional layer before the
+org-specific check. It was removed because
+its fixed keyword list (e.g. terms around
+debt, legal action, repossession) produced
+false positives for legitimate debt recovery
+and collections use cases, which are a
+supported use case on this platform. Content
+policy is now fully org-configurable via
+Layer 1, combined with OpenAI moderation as
+a baseline safety net.
+
+### When validation is skipped
+If OPENAI_API_KEY is not set in Supabase
+Edge Function Secrets, the OpenAI check
+is skipped. Org keyword check still runs.
+If OpenAI API is down → non-fatal, campaign
+proceeds (availability > strict enforcement).
+
+### What happens when blocked
+→ Campaign run status set to BLOCKED
+→ block_reason saved to campaign_runs table
+  with the specific reason
+→ UI shows the actual reason instead of
+  generic "Call minutes limit reached"
+→ Admin can edit the campaign instructions
+  and relaunch
+
+### Future upgrade path
+Can switch from OpenAI to Claude moderation
+with minimal code change:
+→ Change API URL
+→ Change request headers
+→ Change request body format
+→ Change response parsing
+→ All other logic stays identical
+
+### Database change
+block_reason text column added to
+campaign_runs table.
+All 5 campaign run RPCs updated to include
+block_reason in their return columns:
+→ f_get_org_campaign_runs
+→ f_get_campaign_run_by_id
+→ f_get_active_campaign_run
+→ f_get_campaign_runs
+→ f_get_campaign_runs_grouped
+
+### Environment variable required
+OPENAI_API_KEY → add to Supabase Edge
+Function Secrets (sk-...)
+Free to use — OpenAI moderation endpoint
+has no cost and no quota limits.
+
+---
+
+## 18. Per-Organisation Content Policy
+
+### Overview
+Organisation admins can define custom
+keyword/phrase blocklists on top of the
+global platform rules. When a campaign is
+launched, both global and org-specific rules
+are checked before sending to Bland AI.
+
+### How it works
+
+Campaign content is validated at two points:
+
+At save time (backend only — no
+frontend pre-check) — f_create_campaign RPC
+now performs THREE checks in order:
+
+Check 1 — Campaign limit:
+→ Calls f_check_org_limit(org_id, 'add_campaign')
+→ If limit reached → RAISE EXCEPTION
+  "Campaign limit reached. Please upgrade
+  your plan."
+→ Error shown inline in wizard Step 4
+→ Nothing saved to database
+
+Check 2 — Org content policy:
+→ Fetches org_content_policies
+→ Normalizes and checks greeting +
+  instructions against org keywords
+→ If blocked → RAISE EXCEPTION
+  with specific keyword and message
+→ Error shown inline in wizard Step 4
+→ Nothing saved to database
+
+Check 3 — Insert campaign:
+→ Only reached if both checks pass
+→ Campaign saved to database
+→ f_increment_usage called
+→ Safety resync of campaigns_count
+
+No client-side pre-check at save time ✅ —
+handleCreate calls f_create_campaign RPC
+directly and all three checks above run
+server-side.
+
+At launch time:
+→ handleConfirmLaunch calls
+  validateBeforeLaunch (browser-side)
+→ Fetches org policies via f_get_content_policies
+→ Checks campaign text in browser
+→ If blocked → inline error in launch dialog
+→ If safe → calls prepare-campaign-calls
+→ prepare-campaign-calls checks org policies
+  again (server-side safety net)
+→ OpenAI moderation runs
+→ If either fails → campaign run BLOCKED
+
+### Database Table
+org_content_policies:
+- id (uuid)
+- org_id (uuid) → references organizations
+- policy_type (text) → default 'blocked_keyword'
+- value (text) → keyword/phrase in lowercase
+- description (text) → optional reason/note
+- is_active (boolean) → soft delete
+- created_by (uuid) → references users
+- created_at, updated_at (timestamptz)
+
+RLS: org isolation enforced — each org
+can only see and manage their own policies.
+
+### RPCs Added
+f_create_content_policy(org_id, value,
+  description, policy_type)
+→ Validates value not empty
+→ Checks for duplicates
+→ Stores in lowercase for case-insensitive
+  matching
+→ Returns created policy row
+
+f_get_content_policies(org_id)
+→ Returns all active policies for the org
+→ Ordered by created_at DESC
+
+f_delete_content_policy(id, org_id)
+→ Soft deletes (sets is_active = false)
+→ Org isolation enforced via org_id check
+
+### Edge Function Change
+prepare-campaign-calls updated:
+→ After org-specific keyword check passes,
+  fetches org_content_policies for the
+  campaign's org
+→ Runs org-specific keyword check on
+  greeting + instructions
+→ If matched → returns BLOCKED with message:
+  "Campaign contains content restricted by
+  your organisation's content policy: {keyword}.
+  Please review your campaign instructions or
+  update your content policy in Profile settings."
+
+f_create_campaign RPC updated:
+→ Fetches org_content_policies before INSERT
+→ Normalizes text (removes spaces, hyphens
+  etc.) for case-insensitive matching
+→ RAISE EXCEPTION if keyword found
+→ Campaign not saved to database
+→ Also added f_increment_usage call to
+  fix campaigns_count not incrementing
+
+### UI
+Profile → Content Policy tab (admin only):
+→ Add keyword/phrase input with optional
+  description field
+→ Table of existing rules with keyword,
+  reason, date added, Remove button
+→ Notice explaining that OpenAI moderation
+  runs automatically on all campaigns and
+  cannot be disabled
+→ Keywords stored and matched in lowercase
+  (case-insensitive matching)
+
+### Important Notes
+→ Org keywords are checked BEFORE
+  OpenAI moderation
+→ Removing a keyword immediately allows
+  previously blocked content
+→ Keywords are stored in lowercase —
+  matching is case-insensitive
+→ Duplicate keywords are rejected
+
+---
+
+## 19. Campaign Page Banners
+
+### Overview
+The Campaigns page shows contextual
+warning banners at the top to inform
+users of issues before they try to
+create or launch campaigns.
+
+### Banner 1 — Campaign Limit (all plans)
+Condition: campaigns_count >= max_campaigns
+Colour: Yellow/warning
+Message: "Campaign limit reached"
+Shows: Number of campaigns used vs allowed
+Action button: "Upgrade Plan" → /subscriptions
+Hides when: User upgrades plan or deletes
+existing campaigns
+
+### Banner 2 — Payment Method (free plan only)
+Condition: plan_id = 'free' AND
+  stripe_customer_id IS NULL
+Colour: Blue/info
+Message: "Payment method required to launch"
+Shows: Free plan charge rate ($1.00/min)
+Action button: "Add Payment Method" →
+  opens AddPaymentMethodDialog directly
+Hides when: User adds a payment method
+  (stripe_customer_id is set)
+
+### Why banners instead of blocking
+Both banners are informational — they
+do not prevent users from browsing,
+creating drafts, or managing campaigns.
+They appear early so users can resolve
+issues before attempting to launch.
+
+The actual enforcement happens at:
+→ f_create_campaign RPC (campaign limit)
+→ prepare-campaign-calls (payment method,
+  call minutes, content policy)
 
 ---
 
